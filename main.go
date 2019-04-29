@@ -138,11 +138,14 @@ type Tag string
 //
 
 func renderArticle(c *modulr.Context, source string) (*Article, error) {
+	// We can't really tell whether we need to rebuild our articles index, so
+	// we always at least parse every article to get its metadata struct, and
+	// then rebuild the index every time. If the source was unchanged though,
+	// we stop after getting its metadata.
+	forceC := c.ForcedContext()
+
 	var article Article
-	data, unchanged, err := myaml.ParseFileFrontmatter(c, source, &article)
-	if unchanged {
-		return nil, nil
-	}
+	data, unchanged, err := myaml.ParseFileFrontmatter(forceC, source, &article)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +153,12 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	err = article.validate(source)
 	if err != nil {
 		return nil, err
+	}
+
+	// See comment above: we always parse metadata, but if the file was
+	// unchanged, it's okay not to re-render it.
+	if unchanged {
+		return &article, nil
 	}
 
 	data = mmarkdown.Render(c, []byte(data))
