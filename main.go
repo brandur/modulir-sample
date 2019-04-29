@@ -29,6 +29,10 @@ func main() {
 func build(c *modulr.Context) error {
 	c.Log.Debugf("Running build loop")
 
+	//
+	// Phase 0
+	//
+
 	c.Jobs <- func() error {
 		return mfile.CopyFileToDir(c, c.SourceDir+"/hello.md", c.TargetDir)
 	}
@@ -53,6 +57,14 @@ func build(c *modulr.Context) error {
 			return nil
 		}
 	}
+
+	//
+	// Phase 1
+	//
+
+	c.Wait()
+
+	// TODO: Error handling.
 
 	return nil
 }
