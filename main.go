@@ -301,6 +301,11 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	// See comment above: we always parse metadata, but if the file was
 	// unchanged, it's okay not to re-render it.
 	if unchanged {
+		// Decrement stats (which will have incremented due to the forced
+		// context) on this sort of no-op to give a more realistic work
+		// representation.
+		c.Stats.SetJobSkipped()
+
 		return &article, nil
 	}
 
