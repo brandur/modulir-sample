@@ -1,0 +1,13 @@
+= content main
+  p#issue
+    a href="https://brandur.org/passages/{{.Passage.Slug}}" {{.Passage.Issue}}
+  p#passages
+    a href="https://brandur.org/passages" Passages and Glass
+  h1 {{.Passage.Title}}
+  {{HTML .Passage.Content}}
+  p#signature – Brandur
+  p#about
+    = include views/_passages_about .
+    {{if .InEmail}}
+    | If you don't want to get it anymore, <a href="%unsubscribe_url%">unsubscribe right here</a>.
+    {{end}}
