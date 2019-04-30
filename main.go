@@ -10,6 +10,7 @@ import (
 	"github.com/brandur/modulr/mod/mfile"
 	"github.com/brandur/modulr/mod/mmarkdown"
 	"github.com/brandur/modulr/mod/myaml"
+	"github.com/joeshaw/envdecode"
 	//"github.com/pkg/errors"
 	//"gopkg.in/yaml.v2"
 )
@@ -23,14 +24,55 @@ func main() {
 }
 
 //
+// Constants
+//
+
+const (
+	// Release is the asset version of the site. Bump when any assets are
+	// updated to blow away any browser caches.
+	Release = "74"
+)
+
+//
+// Variables
+//
+
+// Left as a global for now for the sake of convenience, but it's not used in
+// very many places and can probably be refactored as a local if desired.
+var conf Conf
+
+//
 // Build function
 //
 
 func build(c *modulr.Context) error {
+	//
+	// Phase 0: Setup
+	//
+	// (No jobs should be enqueued here.)
+
 	c.Log.Debugf("Running build loop")
 
+	err := envdecode.Decode(&conf)
+	if err != nil {
+		return err
+	}
+
 	//
-	// Phase 0
+	// Phase 1
+	//
+	// The build is broken into phases because some jobs depend on jobs that
+	// ran before them. For example, we need to parse all our article metadata
+	// before we can create an article index and render the home page (which
+	// contains a short list of articles).
+	//
+	// After each phase, we call `Wait` on our context which will wait for the
+	// worker pool to finish all its current work and restart it to accept new
+	// jobs after it has.
+	//
+	// The general rule is to make sure that work is done as early as it
+	// possibly can be. e.g. Jobs with no dependencies should always run in
+	// phase 1. Try to make sure that as few phases as necessary
 	//
 
 	c.Jobs <- func() error {
@@ -42,6 +84,14 @@ func build(c *modulr.Context) error {
 	articleSources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
 	if err != nil {
 		return err
+	}
+
+	if conf.Drafts {
+		drafts, err := mfile.ReadDir(c, c.SourceDir+"/content/drafts")
+		if err != nil {
+			return err
+		}
+		articleSources = append(articleSources, drafts...)
 	}
 
 	for _, s := range articleSources {
@@ -59,7 +109,7 @@ func build(c *modulr.Context) error {
 	}
 
 	//
-	// Phase 1
+	// Phase 2
 	//
 
 	if !c.Wait() {
@@ -138,6 +188,59 @@ func (a *Article) validate(source string) error {
 	return nil
 }
 
+// Conf contains configuration information for the command. It's extracted from
+// environment variables.
+type Conf struct {
+	// AtomAuthorName is the name of the author to include in Atom feeds.
+	AtomAuthorName string `env:"AUTHOR_NAME,default=Brandur Leach"`
+
+	// AtomAuthorName is the URL of the author to include in Atom feeds.
+	AtomAuthorURL string `env:"AUTHOR_URL,default=https://brandur.org"`
+
+	// BlackSwanDatabaseURL is a connection string for a database to connect to
+	// in order to extract books, tweets, runs, etc.
+	BlackSwanDatabaseURL string `env:"BLACK_SWAN_DATABASE_URL"`
+
+	// Concurrency is the number of build Goroutines that will be used to
+	// perform build work items.
+	Concurrency int `env:"CONCURRENCY,default=30"`
+
+	// Drafts is whether drafts of articles and fragments should be compiled
+	// along with their published versions.
+	//
+	// Activating drafts also prompts the creation of a robots.txt to make sure
+	// that drafts aren't inadvertently accessed by web crawlers.
+	Drafts bool `env:"DRAFTS,default=false"`
+
+	// ContentOnly tells the build step that it should build using only files
+	// in the content directory. This means that information imported from a
+	// Black Swan database (reading, tweets, etc.) will be skipped. This is
+	// a speed optimization for use while watching for file changes.
+	ContentOnly bool `env:"CONTENT_ONLY,default=false"`
+
+	// GoogleAnalyticsID is the account identifier for Google Analytics to use.
+	GoogleAnalyticsID string `env:"GOOGLE_ANALYTICS_ID"`
+
+	// LocalFonts starts using locally downloaded versions of Google Fonts.
+	// This is not ideal for real deployment because you won't be able to
+	// leverage Google's CDN and the caching that goes with it, and may not get
+	// the font format for requesting browsers, but good for airplane rides
+	// where you otherwise wouldn't have the fonts.
+	LocalFonts bool `env:"LOCAL_FONTS,default=false"`
+
+	// NumAtomEntries is the number of entries to put in Atom feeds.
+	NumAtomEntries int `env:"NUM_ATOM_ENTRIES,default=20"`
+
+	// SiteURL is the absolute URL where the compiled site will be hosted.
+	SiteURL string `env:"SITE_URL,default=https://brandur.org"`
+
+	// TargetDir is the target location where the site will be built to.
+	TargetDir string `env:"TARGET_DIR,default=./public"`
+
+	// Verbose is whether the program will print debug output as it's running.
+	Verbose bool `env:"VERBOSE,default=false"`
+}
+
 // Tag is a symbol assigned to an article to categorize it.
 //
 // This feature is not meanted to be overused. It's really just for tagging
@@ -148,6 +251,26 @@ type Tag string
 //
 // Helpers
 //
+
+// Gets a map of local values for use while rendering a template and includes
+// a few "special" values that are globally relevant to all templates.
+func getLocals(title string, locals map[string]interface{}) map[string]interface{} {
+	defaults := map[string]interface{}{
+		"BodyClass":         "",
+		"GoogleAnalyticsID": conf.GoogleAnalyticsID,
+		"LocalFonts":        conf.LocalFonts,
+		"Release":           Release,
+		"Title":             title,
+		"TwitterCard":       nil,
+		"ViewportWidth":     "device-width",
+	}
+
+	for k, v := range locals {
+		defaults[k] = v
+	}
+
+	return defaults
+}
 
 func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	// We can't really tell whether we need to rebuild our articles index, so
