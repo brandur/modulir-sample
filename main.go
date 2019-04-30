@@ -62,9 +62,9 @@ func build(c *modulr.Context) error {
 	// Phase 1
 	//
 
-	c.Wait()
-
-	// TODO: Error handling.
+	if !c.Wait() {
+		return nil
+	}
 
 	return nil
 }
