@@ -79,6 +79,10 @@ func build(c *modulr.Context) error {
 		return mfile.CopyFileToDir(c, c.SourceDir+"/hello.md", c.TargetDir)
 	}
 
+	//
+	// Articles
+	//
+
 	var articles []*Article
 
 	articleSources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
@@ -107,6 +111,10 @@ func build(c *modulr.Context) error {
 			return nil
 		}
 	}
+
+	//
+	// Pages
+	//
 
 	//
 	// Phase 2
