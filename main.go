@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/brandur/modulr"
+	"github.com/brandur/modulr/mod/mace"
 	"github.com/brandur/modulr/mod/mfile"
 	"github.com/brandur/modulr/mod/mmarkdown"
 	"github.com/brandur/modulr/mod/myaml"
@@ -28,6 +31,12 @@ func main() {
 //
 
 const (
+	// LayoutsDir is the source directory for view layouts.
+	LayoutsDir = "./layouts"
+
+	// MainLayout is the site's main layout.
+	MainLayout = LayoutsDir + "/main"
+
 	// Release is the asset version of the site. Bump when any assets are
 	// updated to blow away any browser caches.
 	Release = "74"
@@ -116,6 +125,33 @@ func build(c *modulr.Context) error {
 	// Pages
 	//
 
+	var pagesMeta map[string]*Page
+	pagesMetaUnchanged, err := myaml.ParseFile(c, c.SourceDir+"/pages/_meta.yaml", &pagesMeta)
+	if err != nil {
+		return err
+	}
+
+	// If the master metadata file changed, then any page could potentially
+	// have changed, so we'll have to re-render all of them: pass a forced
+	// context into each page job.
+	pageContext := c
+	if !pagesMetaUnchanged {
+		c.ForcedContext()
+	}
+
+	pageSources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
+	if err != nil {
+		return err
+	}
+
+	for _, s := range pageSources {
+		source := s
+
+		c.Jobs <- func() error {
+			return renderPage(pageContext, pagesMeta, source)
+		}
+	}
+
 	//
 	// Phase 2
 	//
@@ -178,6 +214,19 @@ type Article struct {
 	// included as YAML frontmatter, but rather calculated from the article's
 	// content, rendered, and then added separately.
 	TOC string `yaml:"-"`
+}
+
+// Page is the metadata for a static HTML page generated from an ACE file.
+// Currently the layouting system of ACE doesn't allow us to pass metadata up
+// very well, so we have this instead.
+type Page struct {
+	// BodyClass is the CSS class that will be assigned to the body tag when
+	// the page is rendered.
+	BodyClass string `yaml:"body_class"`
+
+	// Title is the HTML title that will be assigned to the page when it's
+	// rendered.
+	Title string `yaml:"title"`
 }
 
 func (a *Article) validate(source string) error {
@@ -317,4 +366,56 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	}
 
 	return &article, nil
+}
+
+func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) error {
+	// Strip the `.ace` extension. Ace adds its own when rendering, and we
+	// don't want it on the output files.
+	source = strings.TrimSuffix(source, path.Ext(source))
+
+	// Remove the "./pages" directory, but keep the rest of the path.
+	//
+	// Looks something like "about".
+	absPages, _ := filepath.Abs("./pages")
+	absSource, _ := filepath.Abs(source)
+	pagePath := strings.TrimPrefix(absSource, absPages)
+
+	// Looks something like "./public/about".
+	target := path.Join(c.TargetDir, pagePath)
+
+	// Put a ".html" on if this page is an index. This will allow our local
+	// server to serve it at a directory path, and our upload script is smart
+	// enough to do the right thing with it as well.
+	if path.Base(pagePath) == "index" {
+		target += ".html"
+	}
+
+	locals := map[string]interface{}{
+		"BodyClass": "",
+		"Title":     "Untitled Page",
+	}
+
+	meta, ok := pagesMeta[pagePath]
+	if ok {
+		locals = map[string]interface{}{
+			"BodyClass": meta.BodyClass,
+			"Title":     meta.Title,
+		}
+	} else {
+		c.Log.Errorf("No page meta information: %v", pagePath)
+	}
+
+	locals = getLocals("Page", locals)
+
+	err := mfile.EnsureDir(c, path.Dir(target))
+	if err != nil {
+		return err
+	}
+
+	err = mace.Render(c, MainLayout, source, target, nil, locals)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
