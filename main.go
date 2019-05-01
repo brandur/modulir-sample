@@ -9,14 +9,15 @@ import (
 	"time"
 
 	"github.com/brandur/modulr"
+	"github.com/brandur/modulr/log"
 	"github.com/brandur/modulr/mod/mace"
 	"github.com/brandur/modulr/mod/mfile"
 	"github.com/brandur/modulr/mod/mmarkdown"
 	"github.com/brandur/modulr/mod/mtoc"
 	"github.com/brandur/modulr/mod/myaml"
+	"github.com/brandur/sorg/templatehelpers"
 	"github.com/joeshaw/envdecode"
-	//"github.com/pkg/errors"
-	//"gopkg.in/yaml.v2"
+	"github.com/yosssi/ace"
 )
 
 //
@@ -24,7 +25,8 @@ import (
 //
 
 func main() {
-	modulr.BuildLoop(nil, build)
+	config := &modulr.Config{Log: &log.Logger{Level: log.LevelDebug}}
+	modulr.BuildLoop(config, build)
 }
 
 //
@@ -141,7 +143,7 @@ func build(c *modulr.Context) error {
 	// Note that we must always force loading of context for `_meta.yaml` so
 	// that it's available if any pages need it.
 	var pagesMeta map[string]*Page
-	pagesMetaUnchanged, err := myaml.ParseFile(
+	pagesMetaChanged, err := myaml.ParseFile(
 		c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &pagesMeta)
 	if err != nil {
 		return err
@@ -151,7 +153,7 @@ func build(c *modulr.Context) error {
 	// have changed, so we'll have to re-render all of them: pass a forced
 	// context into each page job.
 	pageContext := c
-	if !pagesMetaUnchanged {
+	if pagesMetaChanged {
 		pageContext = c.ForcedContext()
 	}
 
@@ -169,12 +171,47 @@ func build(c *modulr.Context) error {
 	}
 
 	//
+	// Photographs (read `_meta.yaml`)
+	//
+
+	var photos []*Photo
+	var photosChanged bool
+
+	{
+		var err error
+		var photosWrapper PhotoWrapper
+		photosChanged, err = myaml.ParseFile(
+			c, c.SourceDir+"/content/photographs/_meta.yaml", &photosWrapper)
+		if err != nil {
+			return err
+		}
+
+		photos = photosWrapper.Photos
+	}
+
+	//
 	// Phase 2
 	//
 
 	if !c.Wait() {
 		return nil
 	}
+
+	//
+	// Photographs (index / fetch + resize)
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			if !photosChanged {
+				return false, nil
+			}
+
+			return renderPhotoIndex(c, photos)
+		}
+	}
+
+	// TODO: fetch + resize
 
 	return nil
 }
@@ -323,6 +360,40 @@ type Conf struct {
 	Verbose bool `env:"VERBOSE,default=false"`
 }
 
+// Photo is a photograph.
+type Photo struct {
+	// Description is the description of the photograph.
+	Description string `yaml:"description"`
+
+	// KeepInHomeRotation is a special override for photos I really like that
+	// keeps them in the home page's random rotation. The rotation then
+	// consists of either a recent photo or one of these explicitly selected
+	// old ones.
+	KeepInHomeRotation bool `yaml:"keep_in_home_rotation"`
+
+	// OriginalImageURL is the location where the original-sized version of the
+	// photo can be downloaded from.
+	OriginalImageURL string `yaml:"original_image_url"`
+
+	// OccurredAt is UTC time when the photo was published.
+	OccurredAt *time.Time `yaml:"occurred_at"`
+
+	// Slug is a unique identifier for the photo. Originally these were
+	// generated from Flickr, but I've since just started reusing them for
+	// filenames.
+	Slug string `yaml:"slug"`
+
+	// Title is the title of the photograph.
+	Title string `yaml:"title"`
+}
+
+// PhotoWrapper is a data structure intended to represent the data structure at
+// the top level of photograph data file `content/photographs/_meta.yaml`.
+type PhotoWrapper struct {
+	// Photos is a collection of photos within the top-level wrapper.
+	Photos []*Photo `yaml:"photographs"`
+}
+
 // Tag is a symbol assigned to an article to categorize it.
 //
 // This feature is not meanted to be overused. It's really just for tagging
@@ -348,6 +419,10 @@ type twitterCard struct {
 //
 // Private
 //
+
+func aceOptions() *ace.Options {
+	return &ace.Options{FuncMap: templatehelpers.FuncMap}
+}
 
 // Gets a map of local values for use while rendering a template and includes
 // a few "special" values that are globally relevant to all templates.
@@ -453,7 +528,7 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	// Always use force context because if we made it to here we know that our
 	// sources have changed.
 	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/show",
-		path.Join(c.TargetDir, article.Slug), nil, locals)
+		path.Join(c.TargetDir, article.Slug), aceOptions(), locals)
 	if err != nil {
 		return nil, true, err
 	}
@@ -504,11 +579,30 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 		return true, err
 	}
 
-	changed, err := mace.Render(c, MainLayout, source, target, nil, locals)
+	changed, err := mace.Render(c, MainLayout, source, target, aceOptions(), locals)
 	executed := changed || c.Forced()
 	if err != nil {
 		return executed, err
 	}
 
 	return executed, nil
+}
+
+func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
+	err := mfile.EnsureDir(c, c.TargetDir+"/photos")
+	if err != nil {
+		return true, err
+	}
+
+	locals := getLocals("Photos", map[string]interface{}{
+		"BodyClass":     "photos",
+		"Photos":        photos,
+		"ViewportWidth": 600,
+	})
+
+	// If we called in here then `photos` has changed, so make sure to force a
+	// render.
+	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
+		c.TargetDir+"/photos/index.html", aceOptions(), locals)
+	return true, err
 }
