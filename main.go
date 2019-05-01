@@ -376,9 +376,7 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) er
 	// Remove the "./pages" directory, but keep the rest of the path.
 	//
 	// Looks something like "about".
-	absPages, _ := filepath.Abs("./pages")
-	absSource, _ := filepath.Abs(source)
-	pagePath := strings.TrimPrefix(absSource, absPages)
+	pagePath := strings.TrimPrefix(mfile.MustAbs(source), mfile.MustAbs("./pages"))
 
 	// Looks something like "./public/about".
 	target := path.Join(c.TargetDir, pagePath)
