@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"path"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/brandur/modulr/mod/mace"
 	"github.com/brandur/modulr/mod/mfile"
 	"github.com/brandur/modulr/mod/mmarkdown"
+	"github.com/brandur/modulr/mod/mtoc"
 	"github.com/brandur/modulr/mod/myaml"
 	"github.com/joeshaw/envdecode"
 	//"github.com/pkg/errors"
@@ -40,7 +40,15 @@ const (
 	// Release is the asset version of the site. Bump when any assets are
 	// updated to blow away any browser caches.
 	Release = "74"
+
+	// ViewsDir is the source directory for views.
+	ViewsDir = "./views"
 )
+
+// TwitterInfo is some HTML that includes a Twitter link which can be appended
+// to the publishing info of various content.
+const twitterInfo = `<p>Find me on Twitter at ` +
+	`<strong><a href="https://twitter.com/brandur">@brandur</a></strong>.</p>`
 
 //
 // Variables
@@ -229,6 +237,15 @@ type Page struct {
 	Title string `yaml:"title"`
 }
 
+// publishingInfo produces a brief spiel about publication which is intended to
+// go into the left sidebar when an article is shown.
+func (a *Article) publishingInfo() string {
+	return `<p><strong>Article</strong><br>` + a.Title + `</p>` +
+		`<p><strong>Published</strong><br>` + a.PublishedAt.Format("January 2, 2006") + `</p> ` +
+		`<p><strong>Location</strong><br>` + a.Location + `</p>` +
+		twitterInfo
+}
+
 func (a *Article) validate(source string) error {
 	if a.Location == "" {
 		return fmt.Errorf("No location for article: %v", source)
@@ -358,9 +375,47 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 		return &article, nil
 	}
 
-	data = mmarkdown.Render(c, []byte(data))
+	article.Content = string(mmarkdown.Render(c, []byte(data)))
+	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
+	article.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
 
-	err = ioutil.WriteFile(c.TargetDir+"/"+filepath.Base(source), data, 0644)
+	article.TOC, err = mtoc.RenderFromHTML(article.Content)
+	if err != nil {
+		return nil, err
+	}
+	/*
+
+		format, ok := pathAsImage(
+			path.Join(sorg.ContentDir, "images", article.Slug, "hook"),
+		)
+		if ok {
+			article.HookImageURL = "/assets/" + article.Slug + "/hook." + format
+		}
+
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		card := &twitterCard{
+			Title:       article.Title,
+			Description: article.Hook,
+		}
+		format, ok = pathAsImage(
+			path.Join(sorg.ContentDir, "images", article.Slug, "twitter@2x"),
+		)
+		if ok {
+			card.ImageURL = sorg.AbsoluteURL + "/assets/" + article.Slug + "/twitter@2x." + format
+		}
+	*/
+
+	locals := getLocals(article.Title, map[string]interface{}{
+		"Article":        article,
+		"PublishingInfo": article.publishingInfo(),
+		//"TwitterCard":    card,
+	})
+
+	err = mace.Render(c, MainLayout, ViewsDir+"/articles/show",
+		path.Join(c.TargetDir, article.Slug), nil, locals)
 	if err != nil {
 		return nil, err
 	}
