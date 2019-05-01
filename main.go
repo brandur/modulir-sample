@@ -406,6 +406,9 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 		return nil, err
 	}
 
+	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
+	article.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
+
 	// See comment above: we always parse metadata, but if the file was
 	// unchanged, it's okay not to re-render it.
 	if unchanged && c.Forced() {
@@ -418,8 +421,6 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	}
 
 	article.Content = string(mmarkdown.Render(c, []byte(data)))
-	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
-	article.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
 
 	article.TOC, err = mtoc.RenderFromHTML(article.Content)
 	if err != nil {
