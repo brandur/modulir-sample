@@ -97,7 +97,7 @@ func build(c *modulr.Context) error {
 	// phase 1. Try to make sure that as few phases as necessary
 	//
 
-	c.Jobs <- func() error {
+	c.Jobs <- func() (bool, error) {
 		return mfile.CopyFileToDir(c, c.SourceDir+"/hello.md", c.TargetDir)
 	}
 
@@ -123,14 +123,14 @@ func build(c *modulr.Context) error {
 	for _, s := range articleSources {
 		source := s
 
-		c.Jobs <- func() error {
-			article, err := renderArticle(c, source)
+		c.Jobs <- func() (bool, error) {
+			article, executed, err := renderArticle(c, source)
 			if err != nil {
-				return err
+				return executed, err
 			}
 
 			articles = append(articles, article)
-			return nil
+			return executed, nil
 		}
 	}
 
@@ -163,7 +163,7 @@ func build(c *modulr.Context) error {
 	for _, s := range pageSources {
 		source := s
 
-		c.Jobs <- func() error {
+		c.Jobs <- func() (bool, error) {
 			return renderPage(pageContext, pagesMeta, source)
 		}
 	}
@@ -388,7 +388,7 @@ func pathAsImage(extensionlessPath string) (string, bool) {
 	return "", false
 }
 
-func renderArticle(c *modulr.Context, source string) (*Article, error) {
+func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	// We can't really tell whether we need to rebuild our articles index, so
 	// we always at least parse every article to get its metadata struct, and
 	// then rebuild the index every time. If the source was unchanged though,
@@ -398,12 +398,12 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	var article Article
 	data, unchanged, err := myaml.ParseFileFrontmatter(forceC, source, &article)
 	if err != nil {
-		return nil, err
+		return nil, !unchanged, err
 	}
 
 	err = article.validate(source)
 	if err != nil {
-		return nil, err
+		return nil, !unchanged, err
 	}
 
 	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
@@ -411,20 +411,15 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 
 	// See comment above: we always parse metadata, but if the file was
 	// unchanged, it's okay not to re-render it.
-	if unchanged && c.Forced() {
-		// Decrement stats (which will have incremented due to the forced
-		// context) on this sort of no-op to give a more realistic work
-		// representation.
-		c.Stats.SetJobSkipped()
-
-		return &article, nil
+	if unchanged && !c.Forced() {
+		return &article, false, nil
 	}
 
 	article.Content = string(mmarkdown.Render(c, []byte(data)))
 
 	article.TOC, err = mtoc.RenderFromHTML(article.Content)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
 	format, ok := pathAsImage(
@@ -434,7 +429,7 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 		article.HookImageURL = "/assets/" + article.Slug + "/hook." + format
 	}
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return nil, true, err
 	}
 
 	card := &twitterCard{
@@ -456,16 +451,16 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 
 	// Always use force context because if we made it to here we know that our
 	// sources have changed.
-	err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/show",
+	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/show",
 		path.Join(c.TargetDir, article.Slug), nil, locals)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
-	return &article, nil
+	return &article, true, nil
 }
 
-func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) error {
+func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (bool, error) {
 	// Strip the `.ace` extension. Ace adds its own when rendering, and we
 	// don't want it on the output files.
 	source = strings.TrimSuffix(source, path.Ext(source))
@@ -505,13 +500,13 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) er
 
 	err := mfile.EnsureDir(c, path.Dir(target))
 	if err != nil {
-		return err
+		return true, err
 	}
 
-	err = mace.Render(c, MainLayout, source, target, nil, locals)
+	unchanged, err := mace.Render(c, MainLayout, source, target, nil, locals)
 	if err != nil {
-		return err
+		return !unchanged, err
 	}
 
-	return nil
+	return !unchanged, nil
 }
