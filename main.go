@@ -152,7 +152,7 @@ func build(c *modulr.Context) error {
 	// context into each page job.
 	pageContext := c
 	if !pagesMetaUnchanged {
-		c.ForcedContext()
+		pageContext = c.ForcedContext()
 	}
 
 	pageSources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
@@ -396,22 +396,23 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	forceC := c.ForcedContext()
 
 	var article Article
-	data, unchanged, err := myaml.ParseFileFrontmatter(forceC, source, &article)
+	data, changed, err := myaml.ParseFileFrontmatter(forceC, source, &article)
 	if err != nil {
-		return nil, !unchanged, err
+		return nil, true, err
 	}
 
 	err = article.validate(source)
 	if err != nil {
-		return nil, !unchanged, err
+		return nil, true, err
 	}
 
 	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
 	article.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
 
 	// See comment above: we always parse metadata, but if the file was
-	// unchanged, it's okay not to re-render it.
-	if unchanged && !c.Forced() {
+	// unchanged (determined from the `executed` result), it's okay not to
+	// re-render it.
+	if !changed && !c.Forced() {
 		return &article, false, nil
 	}
 
@@ -503,10 +504,11 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 		return true, err
 	}
 
-	unchanged, err := mace.Render(c, MainLayout, source, target, nil, locals)
+	changed, err := mace.Render(c, MainLayout, source, target, nil, locals)
+	executed := changed || c.Forced()
 	if err != nil {
-		return !unchanged, err
+		return executed, err
 	}
 
-	return !unchanged, nil
+	return executed, nil
 }
