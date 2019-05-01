@@ -99,40 +99,38 @@ func build(c *modulr.Context) error {
 	// phase 1. Try to make sure that as few phases as necessary
 	//
 
-	c.Jobs <- func() (bool, error) {
-		return mfile.CopyFileToDir(c, c.SourceDir+"/hello.md", c.TargetDir)
-	}
-
 	//
 	// Articles
 	//
 
 	var articles []*Article
 
-	articleSources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
-	if err != nil {
-		return err
-	}
-
-	if conf.Drafts {
-		drafts, err := mfile.ReadDir(c, c.SourceDir+"/content/drafts")
+	{
+		articleSources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
 		if err != nil {
 			return err
 		}
-		articleSources = append(articleSources, drafts...)
-	}
 
-	for _, s := range articleSources {
-		source := s
-
-		c.Jobs <- func() (bool, error) {
-			article, executed, err := renderArticle(c, source)
+		if conf.Drafts {
+			drafts, err := mfile.ReadDir(c, c.SourceDir+"/content/drafts")
 			if err != nil {
-				return executed, err
+				return err
 			}
+			articleSources = append(articleSources, drafts...)
+		}
 
-			articles = append(articles, article)
-			return executed, nil
+		for _, s := range articleSources {
+			source := s
+
+			c.Jobs <- func() (bool, error) {
+				article, executed, err := renderArticle(c, source)
+				if err != nil {
+					return executed, err
+				}
+
+				articles = append(articles, article)
+				return executed, nil
+			}
 		}
 	}
 
@@ -140,33 +138,35 @@ func build(c *modulr.Context) error {
 	// Pages
 	//
 
-	// Note that we must always force loading of context for `_meta.yaml` so
-	// that it's available if any pages need it.
-	var pagesMeta map[string]*Page
-	pagesMetaChanged, err := myaml.ParseFile(
-		c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &pagesMeta)
-	if err != nil {
-		return err
-	}
+	{
+		// Note that we must always force loading of context for `_meta.yaml`
+		// so that it's available if any individual page needs it.
+		var pagesMeta map[string]*Page
+		pagesMetaChanged, err := myaml.ParseFile(
+			c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &pagesMeta)
+		if err != nil {
+			return err
+		}
 
-	// If the master metadata file changed, then any page could potentially
-	// have changed, so we'll have to re-render all of them: pass a forced
-	// context into each page job.
-	pageContext := c
-	if pagesMetaChanged {
-		pageContext = c.ForcedContext()
-	}
+		// If the master metadata file changed, then any page could potentially
+		// have changed, so we'll have to re-render all of them: pass a forced
+		// context into each page job.
+		pageContext := c
+		if pagesMetaChanged {
+			pageContext = c.ForcedContext()
+		}
 
-	pageSources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
-	if err != nil {
-		return err
-	}
+		pageSources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
+		if err != nil {
+			return err
+		}
 
-	for _, s := range pageSources {
-		source := s
+		for _, s := range pageSources {
+			source := s
 
-		c.Jobs <- func() (bool, error) {
-			return renderPage(pageContext, pagesMeta, source)
+			c.Jobs <- func() (bool, error) {
+				return renderPage(pageContext, pagesMeta, source)
+			}
 		}
 	}
 
