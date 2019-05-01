@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,10 @@ func main() {
 //
 
 const (
+	// AbsoluteURL is the site's absolute URL. It's usually preferable that
+	// it's not used, but it is when generating emails.
+	AbsoluteURL = "https://brandur.org"
+
 	// LayoutsDir is the source directory for view layouts.
 	LayoutsDir = "./layouts"
 
@@ -133,8 +138,11 @@ func build(c *modulr.Context) error {
 	// Pages
 	//
 
+	// Note that we must always force loading of context for `_meta.yaml` so
+	// that it's available if any pages need it.
 	var pagesMeta map[string]*Page
-	pagesMetaUnchanged, err := myaml.ParseFile(c, c.SourceDir+"/pages/_meta.yaml", &pagesMeta)
+	pagesMetaUnchanged, err := myaml.ParseFile(
+		c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &pagesMeta)
 	if err != nil {
 		return err
 	}
@@ -322,8 +330,23 @@ type Conf struct {
 // certain aggregates (so far just Planet Postgres).
 type Tag string
 
+// twitterCard represents a Twitter "card" (i.e. one of those rich media boxes
+// that sometimes appear under tweets official clients) for use in templates.
+type twitterCard struct {
+	// Description is the title to show in the card.
+	Title string
+
+	// Description is the description to show in the card.
+	Description string
+
+	// ImageURL is the URL to the image to show in the card. It should be
+	// absolute because Twitter will need to be able to fetch it from our
+	// servers. Leave blank if there is no image.
+	ImageURL string
+}
+
 //
-// Helpers
+// Private
 //
 
 // Gets a map of local values for use while rendering a template and includes
@@ -346,6 +369,25 @@ func getLocals(title string, locals map[string]interface{}) map[string]interface
 	return defaults
 }
 
+// Checks if the path exists as a common image format (.jpg or .png only). If
+// so, returns the discovered extension (e.g. "jpg") and boolean true.
+// Otherwise returns an empty string and boolean false.
+func pathAsImage(extensionlessPath string) (string, bool) {
+	// extensions must be lowercased
+	formats := []string{"jpg", "png"}
+
+	for _, format := range formats {
+		_, err := os.Stat(extensionlessPath + "." + format)
+		if err != nil {
+			continue
+		}
+
+		return format, true
+	}
+
+	return "", false
+}
+
 func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	// We can't really tell whether we need to rebuild our articles index, so
 	// we always at least parse every article to get its metadata struct, and
@@ -366,7 +408,7 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 
 	// See comment above: we always parse metadata, but if the file was
 	// unchanged, it's okay not to re-render it.
-	if unchanged {
+	if unchanged && c.Forced() {
 		// Decrement stats (which will have incremented due to the forced
 		// context) on this sort of no-op to give a more realistic work
 		// representation.
@@ -383,38 +425,37 @@ func renderArticle(c *modulr.Context, source string) (*Article, error) {
 	if err != nil {
 		return nil, err
 	}
-	/*
 
-		format, ok := pathAsImage(
-			path.Join(sorg.ContentDir, "images", article.Slug, "hook"),
-		)
-		if ok {
-			article.HookImageURL = "/assets/" + article.Slug + "/hook." + format
-		}
+	format, ok := pathAsImage(
+		path.Join(c.SourceDir, "content", "images", article.Slug, "hook"),
+	)
+	if ok {
+		article.HookImageURL = "/assets/" + article.Slug + "/hook." + format
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
 
-		if err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		card := &twitterCard{
-			Title:       article.Title,
-			Description: article.Hook,
-		}
-		format, ok = pathAsImage(
-			path.Join(sorg.ContentDir, "images", article.Slug, "twitter@2x"),
-		)
-		if ok {
-			card.ImageURL = sorg.AbsoluteURL + "/assets/" + article.Slug + "/twitter@2x." + format
-		}
-	*/
+	card := &twitterCard{
+		Title:       article.Title,
+		Description: article.Hook,
+	}
+	format, ok = pathAsImage(
+		path.Join(c.SourceDir, "content", "images", article.Slug, "twitter@2x"),
+	)
+	if ok {
+		card.ImageURL = AbsoluteURL + "/assets/" + article.Slug + "/twitter@2x." + format
+	}
 
 	locals := getLocals(article.Title, map[string]interface{}{
 		"Article":        article,
 		"PublishingInfo": article.publishingInfo(),
-		//"TwitterCard":    card,
+		"TwitterCard":    card,
 	})
 
-	err = mace.Render(c, MainLayout, ViewsDir+"/articles/show",
+	// Always use force context because if we made it to here we know that our
+	// sources have changed.
+	err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/show",
 		path.Join(c.TargetDir, article.Slug), nil, locals)
 	if err != nil {
 		return nil, err
@@ -431,7 +472,8 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) er
 	// Remove the "./pages" directory, but keep the rest of the path.
 	//
 	// Looks something like "about".
-	pagePath := strings.TrimPrefix(mfile.MustAbs(source), mfile.MustAbs("./pages"))
+	pagePath := strings.TrimPrefix(mfile.MustAbs(source),
+		mfile.MustAbs("./pages")+"/")
 
 	// Looks something like "./public/about".
 	target := path.Join(c.TargetDir, pagePath)
