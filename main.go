@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -491,7 +493,21 @@ func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, err
 		return true, errors.Wrapf(err, "Error fetching photograph: %s", photo.Slug)
 	}
 
-	// TODO: Resize
+	resizeMatrix := []struct {
+		Target string
+		Width  int
+	}{
+		{sourceNoExt + ".jpg", 333},
+		{sourceNoExt + "@2x.jpg", 667},
+		{sourceNoExt + "_large.jpg", 1500},
+		{sourceNoExt + "_large@2x.jpg", 3000},
+	}
+	for _, resize := range resizeMatrix {
+		err := resizeImage(c, photo.OriginalImageURL, resize.Target, resize.Width)
+		if err != nil {
+			return true, errors.Wrapf(err, "Error resizing image: %s", photo.Slug)
+		}
+	}
 
 	return true, nil
 }
@@ -707,6 +723,30 @@ func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
 	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
 		c.TargetDir+"/photos/index.html", aceOptions(), locals)
 	return true, err
+}
+
+func resizeImage(c *modulr.Context, source, target string, width int) error {
+	cmd := exec.Command(
+		"gm",
+		"convert",
+		source,
+		"-auto-orient",
+		"-resize",
+		fmt.Sprintf("%vx", width),
+		"-quality",
+		"85",
+		target,
+	)
+
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("%v (stderr: %v)", err, errOut.String())
+	}
+
+	return nil
 }
 
 func sortPhotos(photos []*Photo) {
