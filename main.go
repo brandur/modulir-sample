@@ -63,7 +63,7 @@ const (
 	ViewsDir = "./views"
 )
 
-// TwitterInfo is some HTML that includes a Twitter link which can be appended
+// twitterInfo is some HTML that includes a Twitter link which can be appended
 // to the publishing info of various content.
 const twitterInfo = `<p>Find me on Twitter at ` +
 	`<strong><a href="https://twitter.com/brandur">@brandur</a></strong>.</p>`
@@ -118,8 +118,9 @@ func build(c *modulr.Context) error {
 	//
 
 	commonDirs := []string{
-		TempDir,
+		c.TargetDir + "/fragments",
 		c.TargetDir + "/photos",
+		TempDir,
 	}
 	for _, dir := range commonDirs {
 		err = mfile.EnsureDir(c, dir)
@@ -135,7 +136,7 @@ func build(c *modulr.Context) error {
 	var articles []*Article
 
 	{
-		articleSources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
+		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
 		if err != nil {
 			return err
 		}
@@ -145,10 +146,10 @@ func build(c *modulr.Context) error {
 			if err != nil {
 				return err
 			}
-			articleSources = append(articleSources, drafts...)
+			sources = append(sources, drafts...)
 		}
 
-		for _, s := range articleSources {
+		for _, s := range sources {
 			source := s
 
 			c.Jobs <- func() (bool, error) {
@@ -158,6 +159,41 @@ func build(c *modulr.Context) error {
 				}
 
 				articles = append(articles, article)
+				return executed, nil
+			}
+		}
+	}
+
+	//
+	// Fragments
+	//
+
+	var fragments []*Fragment
+
+	{
+		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/fragments")
+		if err != nil {
+			return err
+		}
+
+		if conf.Drafts {
+			drafts, err := mfile.ReadDir(c, c.SourceDir+"/content/fragments-drafts")
+			if err != nil {
+				return err
+			}
+			sources = append(sources, drafts...)
+		}
+
+		for _, s := range sources {
+			source := s
+
+			c.Jobs <- func() (bool, error) {
+				fragment, executed, err := renderFragment(c, source)
+				if err != nil {
+					return executed, err
+				}
+
+				fragments = append(fragments, fragment)
 				return executed, nil
 			}
 		}
@@ -176,8 +212,6 @@ func build(c *modulr.Context) error {
 		if err != nil {
 			return err
 		}
-
-		c.Log.Infof("pagesMetaChanged = %v", pagesMetaChanged)
 
 		// If the master metadata file changed, then any page could potentially
 		// have changed, so we'll have to re-render all of them: pass a forced
@@ -313,19 +347,6 @@ type Article struct {
 	TOC string `yaml:"-"`
 }
 
-// Page is the metadata for a static HTML page generated from an ACE file.
-// Currently the layouting system of ACE doesn't allow us to pass metadata up
-// very well, so we have this instead.
-type Page struct {
-	// BodyClass is the CSS class that will be assigned to the body tag when
-	// the page is rendered.
-	BodyClass string `yaml:"body_class"`
-
-	// Title is the HTML title that will be assigned to the page when it's
-	// rendered.
-	Title string `yaml:"title"`
-}
-
 // publishingInfo produces a brief spiel about publication which is intended to
 // go into the left sidebar when an article is shown.
 func (a *Article) publishingInfo() string {
@@ -402,6 +423,83 @@ type Conf struct {
 
 	// Verbose is whether the program will print debug output as it's running.
 	Verbose bool `env:"VERBOSE,default=false"`
+}
+
+// Fragment represents a fragment (that is, a short "stream of consciousness"
+// style article) to be rendered.
+type Fragment struct {
+	// Attributions are any attributions for content that may be included in
+	// the article (like an image in the header for example).
+	Attributions string `yaml:"attributions"`
+
+	// Content is the HTML content of the fragment. It isn't included as YAML
+	// frontmatter, and is rather split out of an fragment's Markdown file,
+	// rendered, and then added separately.
+	Content string `yaml:"-"`
+
+	// Draft indicates that the fragment is not yet published.
+	Draft bool `yaml:"-"`
+
+	// HNLink is an optional link to comments on Hacker News.
+	HNLink string `yaml:"hn_link"`
+
+	// Hook is a leading sentence or two to succinctly introduce the fragment.
+	Hook string `yaml:"hook"`
+
+	// Image is an optional image that may be included with a fragment.
+	Image string `yaml:"image"`
+
+	// Location is the geographical location where this article was written.
+	Location string `yaml:"location"`
+
+	// PublishedAt is when the fragment was published.
+	PublishedAt *time.Time `yaml:"published_at"`
+
+	// Slug is a unique identifier for the fragment that also helps determine
+	// where it's addressable by URL.
+	Slug string `yaml:"-"`
+
+	// Title is the fragment's title.
+	Title string `yaml:"title"`
+}
+
+// PublishingInfo produces a brief spiel about publication which is intended to
+// go into the left sidebar when a fragment is shown.
+func (f *Fragment) publishingInfo() string {
+	s := `<p><strong>Fragment</strong><br>` + f.Title + `</p>` +
+		`<p><strong>Published</strong><br>` + f.PublishedAt.Format("January 2, 2006") + `</p> `
+
+	if f.Location != "" {
+		s += `<p><strong>Location</strong><br>` + f.Location + `</p>`
+	}
+
+	s += twitterInfo
+	return s
+}
+
+func (f *Fragment) validate(source string) error {
+	if f.Title == "" {
+		return fmt.Errorf("No title for fragment: %v", source)
+	}
+
+	if f.PublishedAt == nil {
+		return fmt.Errorf("No publish date for fragment: %v", source)
+	}
+
+	return nil
+}
+
+// Page is the metadata for a static HTML page generated from an ACE file.
+// Currently the layouting system of ACE doesn't allow us to pass metadata up
+// very well, so we have this instead.
+type Page struct {
+	// BodyClass is the CSS class that will be assigned to the body tag when
+	// the page is rendered.
+	BodyClass string `yaml:"body_class"`
+
+	// Title is the HTML title that will be assigned to the page when it's
+	// rendered.
+	Title string `yaml:"title"`
 }
 
 // Photo is a photograph.
@@ -657,6 +755,64 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	return &article, true, nil
 }
 
+func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
+	// We can't really tell whether we need to rebuild our fragments index, so
+	// we always at least parse every fragment to get its metadata struct, and
+	// then rebuild the index every time. If the source was unchanged though,
+	// we stop after getting its metadata.
+	forceC := c.ForcedContext()
+
+	var fragment Fragment
+	data, changed, err := myaml.ParseFileFrontmatter(forceC, source, &fragment)
+	if err != nil {
+		return nil, true, err
+	}
+
+	err = fragment.validate(source)
+	if err != nil {
+		return nil, true, err
+	}
+
+	fragment.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
+	fragment.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
+
+	// See comment above: we always parse metadata, but if the file was
+	// unchanged (determined from the `executed` result), it's okay not to
+	// re-render it.
+	if !changed && !c.Forced() {
+		return &fragment, false, nil
+	}
+
+	fragment.Content = string(mmarkdown.Render(c, []byte(data)))
+
+	card := &twitterCard{
+		Title:       fragment.Title,
+		Description: fragment.Hook,
+	}
+	format, ok := pathAsImage(
+		path.Join(c.SourceDir, "content", "images", "fragments", fragment.Slug, "twitter@2x"),
+	)
+	if ok {
+		card.ImageURL = AbsoluteURL + "/assets/fragments/" + fragment.Slug + "/twitter@2x." + format
+	}
+
+	locals := getLocals(fragment.Title, map[string]interface{}{
+		"Fragment":       fragment,
+		"PublishingInfo": fragment.publishingInfo(),
+		"TwitterCard":    card,
+	})
+
+	// Always use force context because if we made it to here we know that our
+	// sources have changed.
+	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/show",
+		path.Join(c.TargetDir, "fragments", fragment.Slug), aceOptions(), locals)
+	if err != nil {
+		return nil, true, err
+	}
+
+	return &fragment, true, nil
+}
+
 func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (bool, error) {
 	// Strip the `.ace` extension. Ace adds its own when rendering, and we
 	// don't want it on the output files.
@@ -699,8 +855,6 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 	if err != nil {
 		return true, err
 	}
-
-	c.Log.Infof("forced context = %v", c.Forced())
 
 	changed, err := mace.Render(c, MainLayout, source, target, aceOptions(), locals)
 	executed := changed || c.Forced()
