@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +21,7 @@ import (
 	"github.com/brandur/modulr/mod/myaml"
 	"github.com/brandur/sorg/templatehelpers"
 	"github.com/joeshaw/envdecode"
+	"github.com/pkg/errors"
 	"github.com/yosssi/ace"
 )
 
@@ -25,7 +30,7 @@ import (
 //
 
 func main() {
-	config := &modulr.Config{Log: &log.Logger{Level: log.LevelDebug}}
+	config := &modulr.Config{Log: &log.Logger{Level: log.LevelInfo}}
 	modulr.BuildLoop(config, build)
 }
 
@@ -47,6 +52,10 @@ const (
 	// Release is the asset version of the site. Bump when any assets are
 	// updated to blow away any browser caches.
 	Release = "74"
+
+	// TempDir is a temporary directory used to download images that will be
+	// processed and such.
+	TempDir = "./tmp"
 
 	// ViewsDir is the source directory for views.
 	ViewsDir = "./views"
@@ -100,6 +109,24 @@ func build(c *modulr.Context) error {
 	//
 
 	//
+	// Common directories
+	//
+	// Create these outside of the job system because jobs below may depend on
+	// their existence.
+	//
+
+	commonDirs := []string{
+		TempDir,
+		c.TargetDir + "/photos",
+	}
+	for _, dir := range commonDirs {
+		err = mfile.EnsureDir(c, dir)
+		if err != nil {
+			return nil
+		}
+	}
+
+	//
 	// Articles
 	//
 
@@ -147,6 +174,8 @@ func build(c *modulr.Context) error {
 		if err != nil {
 			return err
 		}
+
+		c.Log.Infof("pagesMetaChanged = %v", pagesMetaChanged)
 
 		// If the master metadata file changed, then any page could potentially
 		// have changed, so we'll have to re-render all of them: pass a forced
@@ -201,6 +230,12 @@ func build(c *modulr.Context) error {
 	// Photographs (index / fetch + resize)
 	//
 
+	// Photo sort
+	{
+		sortPhotos(photos)
+	}
+
+	// Photo index
 	{
 		c.Jobs <- func() (bool, error) {
 			if !photosChanged {
@@ -211,7 +246,14 @@ func build(c *modulr.Context) error {
 		}
 	}
 
-	// TODO: fetch + resize
+	// Photo fetch + resize
+	{
+		for _, photo := range photos {
+			c.Jobs <- func() (bool, error) {
+				return fetchAndResizePhoto(c, c.SourceDir+"/photographs", photo)
+			}
+		}
+	}
 
 	return nil
 }
@@ -424,6 +466,72 @@ func aceOptions() *ace.Options {
 	return &ace.Options{FuncMap: templatehelpers.FuncMap}
 }
 
+func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, error) {
+	// source without an extension, e.g. `content/photographs/123`
+	sourceNoExt := filepath.Join(dir, photo.Slug)
+
+	// A "marker" is an empty file that we commit to a photograph directory
+	// that indicates that we've already done the work to fetch and resize a
+	// photo. It allows us to skip duplicate work even if we don't have the
+	// work's results available locally. This is important for CI where we
+	// store results to an S3 bucket, but don't pull them all back down again
+	// for every build.
+	markerPath := sourceNoExt + ".marker"
+
+	if mfile.Exists(markerPath) {
+		c.Log.Debugf("Skipping photo fetch + resize because marker exists: %s",
+			markerPath)
+		return false, nil
+	}
+
+	originalPath := filepath.Join(TempDir, photo.Slug+"_original.jpg")
+
+	err := fetchURL(c, photo.OriginalImageURL, originalPath)
+	if err != nil {
+		return true, errors.Wrapf(err, "Error fetching photograph: %s", photo.Slug)
+	}
+
+	// TODO: Resize
+
+	return true, nil
+}
+
+// fetchURL is a helper for fetching a file via HTTP and storing it the local
+// filesystem.
+func fetchURL(c *modulr.Context, source, target string) error {
+	c.Log.Debugf("Fetching file: %v", source)
+
+	resp, err := http.Get(source)
+	if err != nil {
+		return errors.Wrapf(err, "Error fetching: %v", source)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("Unexpected status code fetching '%v': %d",
+			source, resp.StatusCode)
+	}
+
+	f, err := os.Create(target)
+	if err != nil {
+		return errors.Wrapf(err, "Error creating: %v", target)
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+
+	// probably not needed
+	defer w.Flush()
+
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		return errors.Wrapf(err, "Error copying to '%v' from HTTP response",
+			target)
+	}
+
+	return nil
+}
+
 // Gets a map of local values for use while rendering a template and includes
 // a few "special" values that are globally relevant to all templates.
 func getLocals(title string, locals map[string]interface{}) map[string]interface{} {
@@ -504,9 +612,6 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	if ok {
 		article.HookImageURL = "/assets/" + article.Slug + "/hook." + format
 	}
-	if err != nil && !os.IsNotExist(err) {
-		return nil, true, err
-	}
 
 	card := &twitterCard{
 		Title:       article.Title,
@@ -579,6 +684,8 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 		return true, err
 	}
 
+	c.Log.Infof("forced context = %v", c.Forced())
+
 	changed, err := mace.Render(c, MainLayout, source, target, aceOptions(), locals)
 	executed := changed || c.Forced()
 	if err != nil {
@@ -589,11 +696,6 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 }
 
 func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
-	err := mfile.EnsureDir(c, c.TargetDir+"/photos")
-	if err != nil {
-		return true, err
-	}
-
 	locals := getLocals("Photos", map[string]interface{}{
 		"BodyClass":     "photos",
 		"Photos":        photos,
@@ -602,7 +704,13 @@ func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
 
 	// If we called in here then `photos` has changed, so make sure to force a
 	// render.
-	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
+	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
 		c.TargetDir+"/photos/index.html", aceOptions(), locals)
 	return true, err
+}
+
+func sortPhotos(photos []*Photo) {
+	sort.Slice(photos, func(i, j int) bool {
+		return photos[j].OccurredAt.Before(*photos[i].OccurredAt)
+	})
 }
