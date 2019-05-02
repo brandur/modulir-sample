@@ -206,9 +206,9 @@ func build(c *modulr.Context) error {
 	{
 		// Note that we must always force loading of context for `_meta.yaml`
 		// so that it's available if any individual page needs it.
-		var pagesMeta map[string]*Page
+		var meta map[string]*Page
 		pagesMetaChanged, err := myaml.ParseFile(
-			c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &pagesMeta)
+			c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &meta)
 		if err != nil {
 			return err
 		}
@@ -221,16 +221,16 @@ func build(c *modulr.Context) error {
 			pageContext = c.ForcedContext()
 		}
 
-		pageSources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
+		sources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
 		if err != nil {
 			return err
 		}
 
-		for _, s := range pageSources {
+		for _, s := range sources {
 			source := s
 
 			c.Jobs <- func() (bool, error) {
-				return renderPage(pageContext, pagesMeta, source)
+				return renderPage(pageContext, meta, source)
 			}
 		}
 	}
@@ -284,9 +284,13 @@ func build(c *modulr.Context) error {
 
 	// Photo fetch + resize
 	{
-		for _, photo := range photos {
-			c.Jobs <- func() (bool, error) {
-				return fetchAndResizePhoto(c, c.SourceDir+"/photographs", photo)
+		if photosChanged {
+			for _, p := range photos {
+				photo := p
+
+				c.Jobs <- func() (bool, error) {
+					return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs", photo)
+				}
 			}
 		}
 	}
@@ -603,9 +607,17 @@ func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, err
 	for _, resize := range resizeMatrix {
 		err := resizeImage(c, photo.OriginalImageURL, resize.Target, resize.Width)
 		if err != nil {
-			return true, errors.Wrapf(err, "Error resizing image: %s", photo.Slug)
+			return true, errors.Wrapf(err, "Error resizing photograph: %s", photo.Slug)
 		}
 	}
+
+	// After everything is done, created a marker file to indicate that the
+	// work doesn't need to be redone.
+	file, err := os.OpenFile(markerPath, os.O_RDONLY|os.O_CREATE, 0755)
+	if err != nil {
+		return true, errors.Wrapf(err, "Error creating marker for photograph: ", photo.Slug)
+	}
+	file.Close()
 
 	return true, nil
 }
