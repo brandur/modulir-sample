@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -236,7 +237,7 @@ func build(c *modulr.Context) error {
 	}
 
 	//
-	// Photographs (read `_meta.yaml`)
+	// Photos (read `_meta.yaml`)
 	//
 
 	var photos []*Photo
@@ -268,14 +269,26 @@ func build(c *modulr.Context) error {
 		return nil
 	}
 
-	//
-	// Photographs (index / fetch + resize)
-	//
-
-	// Photo sort
+	// Various sorts for anything that might need it.
 	{
+		sortArticles(articles)
+		sortFragments(fragments)
 		sortPhotos(photos)
 	}
+
+	//
+	// Home
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			return renderHome(c, articles, fragments, photos)
+		}
+	}
+
+	//
+	// Photos (index / fetch + resize)
+	//
 
 	// Photo index
 	{
@@ -833,6 +846,35 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	return &fragment, true, nil
 }
 
+func renderHome(c *modulr.Context, articles []*Article, fragments []*Fragment, photos []*Photo) (bool, error) {
+	if len(articles) > 3 {
+		articles = articles[0:3]
+	}
+
+	// Try just one fragment for now to better balance the page's height.
+	if len(fragments) > 1 {
+		fragments = fragments[0:1]
+	}
+
+	// Find a random photo to put on the homepage.
+	photo := selectRandomPhoto(photos)
+
+	locals := getLocals("brandur.org", map[string]interface{}{
+		"Articles":  articles,
+		"BodyClass": "index",
+		"Fragments": fragments,
+		"Photo":     photo,
+	})
+
+	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/index",
+		c.TargetDir+"/index.html", aceOptions(), locals)
+	if err != nil {
+		return true, err
+	}
+
+	return true, nil
+}
+
 func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (bool, error) {
 	// Strip the `.ace` extension. Ace adds its own when rendering, and we
 	// don't want it on the output files.
@@ -921,6 +963,46 @@ func resizeImage(c *modulr.Context, source, target string, width int) error {
 	}
 
 	return nil
+}
+
+func selectRandomPhoto(photos []*Photo) *Photo {
+	if len(photos) < 1 {
+		return nil
+	}
+
+	numRecent := 20
+	if len(photos) < numRecent {
+		numRecent = len(photos)
+	}
+
+	// All recent photos go into the random selection.
+	randomPhotos := photos[0:numRecent]
+
+	// Older photos that are good enough that I've explicitly tagged them
+	// as such also get considered for the rotation.
+	if len(photos) > numRecent {
+		olderPhotos := photos[numRecent : len(photos)-1]
+
+		for _, photo := range olderPhotos {
+			if photo.KeepInHomeRotation {
+				randomPhotos = append(randomPhotos, photo)
+			}
+		}
+	}
+
+	return randomPhotos[rand.Intn(len(randomPhotos))]
+}
+
+func sortArticles(articles []*Article) {
+	sort.Slice(articles, func(i, j int) bool {
+		return articles[j].PublishedAt.Before(*articles[i].PublishedAt)
+	})
+}
+
+func sortFragments(fragments []*Fragment) {
+	sort.Slice(fragments, func(i, j int) bool {
+		return fragments[j].PublishedAt.Before(*fragments[i].PublishedAt)
+	})
 }
 
 func sortPhotos(photos []*Photo) {
