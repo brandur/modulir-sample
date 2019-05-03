@@ -243,15 +243,21 @@ func build(c *modulr.Context) error {
 	var photosChanged bool
 
 	{
-		var err error
-		var photosWrapper PhotoWrapper
-		photosChanged, err = myaml.ParseFile(
-			c, c.SourceDir+"/content/photographs/_meta.yaml", &photosWrapper)
-		if err != nil {
-			return err
-		}
+		c.Jobs <- func() (bool, error) {
+			var err error
+			var photosWrapper PhotoWrapper
 
-		photos = photosWrapper.Photos
+			// Always force this job so that we can get an accurate job count
+			// when it comes to resizing photos below.
+			photosChanged, err = myaml.ParseFile(
+				c.ForcedContext(), c.SourceDir+"/content/photographs/_meta.yaml", &photosWrapper)
+			if err != nil {
+				return true, err
+			}
+
+			photos = photosWrapper.Photos
+			return true, nil
+		}
 	}
 
 	//
@@ -284,13 +290,15 @@ func build(c *modulr.Context) error {
 
 	// Photo fetch + resize
 	{
-		if photosChanged {
-			for _, p := range photos {
-				photo := p
+		for _, p := range photos {
+			photo := p
 
-				c.Jobs <- func() (bool, error) {
-					return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs", photo)
+			c.Jobs <- func() (bool, error) {
+				if !photosChanged {
+					return false, nil
 				}
+
+				return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs", photo)
 			}
 		}
 	}
