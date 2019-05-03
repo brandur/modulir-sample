@@ -743,7 +743,7 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	// unchanged (determined from the `executed` result), it's okay not to
 	// re-render it.
 	if !changed && !c.Forced() {
-		return &article, false, nil
+		return &article, true, nil
 	}
 
 	article.Content = string(mmarkdown.Render(c, []byte(data)))
@@ -813,7 +813,7 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	// unchanged (determined from the `executed` result), it's okay not to
 	// re-render it.
 	if !changed && !c.Forced() {
-		return &fragment, false, nil
+		return &fragment, true, nil
 	}
 
 	fragment.Content = string(mmarkdown.Render(c, []byte(data)))
