@@ -22,10 +22,12 @@ import (
 	"github.com/brandur/modulr/mod/mmarkdown"
 	"github.com/brandur/modulr/mod/mtoc"
 	"github.com/brandur/modulr/mod/myaml"
+	"github.com/brandur/sorg/markdown"
 	"github.com/brandur/sorg/templatehelpers"
 	"github.com/joeshaw/envdecode"
 	"github.com/pkg/errors"
 	"github.com/yosssi/ace"
+	"gopkg.in/russross/blackfriday.v2"
 )
 
 //
@@ -79,6 +81,19 @@ const twitterInfo = `<p>Find me on Twitter at ` +
 // Left as a global for now for the sake of convenience, but it's not used in
 // very many places and can probably be refactored as a local if desired.
 var conf Conf
+
+var renderComplexMarkdown func(string, *markdown.RenderOptions) string
+
+//
+// Init
+//
+
+// init runs on package initialization.
+func init() {
+	renderComplexMarkdown = markdown.ComposeRenderStack(func(source []byte) []byte {
+		return blackfriday.Run(source)
+	})
+}
 
 //
 // Build function
@@ -852,7 +867,7 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 		return &article, true, nil
 	}
 
-	article.Content = string(mmarkdown.Render(c, []byte(data)))
+	article.Content = renderComplexMarkdown(string(data), nil)
 
 	article.TOC, err = mtoc.RenderFromHTML(article.Content)
 	if err != nil {
@@ -922,7 +937,7 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 		return &fragment, true, nil
 	}
 
-	fragment.Content = string(mmarkdown.Render(c, []byte(data)))
+	fragment.Content = renderComplexMarkdown(string(data), nil)
 
 	card := &twitterCard{
 		Title:       fragment.Title,
