@@ -23,6 +23,7 @@ import (
 	"github.com/brandur/modulr/mod/mtoc"
 	"github.com/brandur/modulr/mod/myaml"
 	"github.com/brandur/sorg/markdown"
+	t "github.com/brandur/sorg/talks"
 	"github.com/brandur/sorg/templatehelpers"
 	"github.com/joeshaw/envdecode"
 	"github.com/pkg/errors"
@@ -415,9 +416,8 @@ func build(c *modulr.Context) error {
 	// Talks
 	//
 
-	var talks []*Talk
+	var talks []*t.Talk
 
-	// TODO: Unfinished.
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/talks")
 		if err != nil {
@@ -436,13 +436,13 @@ func build(c *modulr.Context) error {
 			source := s
 
 			c.Jobs <- func() (bool, error) {
-				passage, executed, err := renderPassage(c, source)
-				if err != nil {
+				talk, executed, err := renderTalk(c, source)
+				if !executed || err != nil {
 					return executed, err
 				}
 
-				passages = append(passages, passage)
-				return executed, nil
+				talks = append(talks, talk)
+				return true, nil
 			}
 		}
 	}
@@ -1419,6 +1419,34 @@ func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool,
 	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/sequences/photo",
 		path.Join(c.TargetDir, "sequences", sequenceName, photo.Slug), aceOptions(), locals)
 	return true, err
+}
+
+func renderTalk(c *modulr.Context, source string) (*t.Talk, bool, error) {
+	changed := c.Changed(source)
+	if !changed && !c.Forced() {
+		return nil, false, nil
+	}
+
+	// TODO: modulr-ize this package
+	talk, err := t.Render(
+		c.SourceDir+"/content", filepath.Dir(source), filepath.Base(source))
+	if err != nil {
+		return nil, true, err
+	}
+
+	locals := getLocals(talk.Title, map[string]interface{}{
+		"BodyClass":      "talk",
+		"PublishingInfo": talk.PublishingInfo(),
+		"Talk":           talk,
+	})
+
+	_, err = mace.Render(c, MainLayout, ViewsDir+"/talks/show",
+		path.Join(c.TargetDir, talk.Slug), aceOptions(), locals)
+	if err != nil {
+		return talk, true, err
+	}
+
+	return talk, true, nil
 }
 
 func resizeImage(c *modulr.Context, source, target string, width int) error {
