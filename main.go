@@ -542,6 +542,7 @@ func build(c *modulr.Context) error {
 	// Fragments
 	//
 
+	// Index
 	{
 		c.Jobs <- func() (bool, error) {
 			if !fragmentsChanged {
@@ -549,6 +550,17 @@ func build(c *modulr.Context) error {
 			}
 
 			return renderFragmentsIndex(c, fragments)
+		}
+	}
+
+	// Feed
+	{
+		c.Jobs <- func() (bool, error) {
+			if !fragmentsChanged {
+				return false, nil
+			}
+
+			return renderFragmentsFeed(c, fragments)
 		}
 	}
 
@@ -1395,6 +1407,49 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	}
 
 	return &fragment, true, nil
+}
+
+func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment) (bool, error) {
+	feed := &atom.Feed{
+		Title: "Fragments - brandur.org",
+		ID:    "tag:brandur.org.org,2013:/fragments",
+
+		Links: []*atom.Link{
+			{Rel: "self", Type: "application/atom+xml", Href: "https://brandur.org/fragments.atom"},
+			{Rel: "alternate", Type: "text/html", Href: "https://brandur.org"},
+		},
+	}
+
+	if len(fragments) > 0 {
+		feed.Updated = *fragments[0].PublishedAt
+	}
+
+	for i, fragment := range fragments {
+		if i >= conf.NumAtomEntries {
+			break
+		}
+
+		entry := &atom.Entry{
+			Title:     fragment.Title,
+			Content:   &atom.EntryContent{Content: fragment.Content, Type: "html"},
+			Published: *fragment.PublishedAt,
+			Updated:   *fragment.PublishedAt,
+			Link:      &atom.Link{Href: conf.SiteURL + "/fragments/" + fragment.Slug},
+			ID:        "tag:brandur.org," + fragment.PublishedAt.Format("2006-01-02") + ":fragments/" + fragment.Slug,
+
+			AuthorName: conf.AtomAuthorName,
+			AuthorURI:  conf.AtomAuthorURL,
+		}
+		feed.Entries = append(feed.Entries, entry)
+	}
+
+	f, err := os.Create(conf.TargetDir + "/fragments.atom")
+	if err != nil {
+		return true, err
+	}
+	defer f.Close()
+
+	return true, feed.Encode(f, "  ")
 }
 
 func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment) (bool, error) {
