@@ -22,6 +22,7 @@ import (
 	"github.com/brandur/modulr/mod/mmarkdown"
 	"github.com/brandur/modulr/mod/mtoc"
 	"github.com/brandur/modulr/mod/myaml"
+	"github.com/brandur/sorg/assets"
 	"github.com/brandur/sorg/markdown"
 	t "github.com/brandur/sorg/talks"
 	"github.com/brandur/sorg/templatehelpers"
@@ -148,6 +149,11 @@ func build(c *modulr.Context) error {
 		return err
 	}
 
+	// This is where we stored "versioned" assets like compiled JS and CSS.
+	// These assets have a release number that we can increment and by
+	// extension quickly invalidate.
+	versionedAssetsDir := path.Join(c.TargetDir, "assets", Release)
+
 	//
 	// Phase 1
 	//
@@ -178,6 +184,7 @@ func build(c *modulr.Context) error {
 		c.TargetDir + "/passages",
 		c.TargetDir + "/photos",
 		TempDir,
+		versionedAssetsDir,
 	}
 	for _, dir := range commonDirs {
 		err = mfile.EnsureDir(c, dir)
@@ -271,6 +278,16 @@ func build(c *modulr.Context) error {
 				fragments = append(fragments, fragment)
 				return executed, nil
 			}
+		}
+	}
+
+	//
+	// Javascripts
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			return compileJavascripts(c, versionedAssetsDir)
 		}
 	}
 
@@ -927,6 +944,25 @@ type twitterCard struct {
 
 func aceOptions() *ace.Options {
 	return &ace.Options{FuncMap: templatehelpers.FuncMap}
+}
+
+func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, error) {
+	sourceDir := c.SourceDir + "/content/javascripts"
+
+	sources, err := mfile.ReadDir(c, sourceDir)
+	if err != nil {
+		return false, err
+	}
+
+	changed := c.ChangedAny(sources)
+	if !changed && !c.Forced() {
+		return false, nil
+	}
+
+	err = assets.CompileJavascripts(
+		sourceDir,
+		versionedAssetsDir+"/app.js")
+	return true, err
 }
 
 func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, error) {
