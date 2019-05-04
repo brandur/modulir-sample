@@ -433,6 +433,16 @@ func build(c *modulr.Context) error {
 	}
 
 	//
+	// Stylesheets
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			return compileStylesheets(c, versionedAssetsDir)
+		}
+	}
+
+	//
 	// Talks
 	//
 
@@ -962,6 +972,25 @@ func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, err
 	err = assets.CompileJavascripts(
 		sourceDir,
 		versionedAssetsDir+"/app.js")
+	return true, err
+}
+
+func compileStylesheets(c *modulr.Context, versionedAssetsDir string) (bool, error) {
+	sourceDir := c.SourceDir + "/content/stylesheets"
+
+	sources, err := mfile.ReadDir(c, sourceDir)
+	if err != nil {
+		return false, err
+	}
+
+	changed := c.ChangedAny(sources)
+	if !changed && !c.Forced() {
+		return false, nil
+	}
+
+	err = assets.CompileStylesheets(
+		sourceDir,
+		versionedAssetsDir+"/app.css")
 	return true, err
 }
 
