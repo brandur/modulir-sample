@@ -134,6 +134,22 @@ func build(c *modulr.Context) error {
 	}
 
 	//
+	// Symlinks
+	//
+
+	commonSymlinks := [][2]string{
+		{c.SourceDir + "/content/fonts", c.TargetDir + "/fonts"},
+		{c.SourceDir + "/content/images", c.TargetDir + "/images"},
+		{c.SourceDir + "/content/photographs", c.TargetDir + "/photographs"},
+	}
+	for _, link := range commonSymlinks {
+		err := mfile.EnsureSymlink(c, link[0], link[1])
+		if err != nil {
+			return nil
+		}
+	}
+
+	//
 	// Articles
 	//
 
