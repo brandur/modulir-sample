@@ -138,6 +138,7 @@ func build(c *modulr.Context) error {
 	// Phase 0: Setup
 	//
 	// (No jobs should be enqueued here.)
+	//
 
 	c.Log.Debugf("Running build loop")
 
@@ -406,6 +407,42 @@ func build(c *modulr.Context) error {
 
 				sequences[slug] = photosWrapper.Photos
 				return true, nil
+			}
+		}
+	}
+
+	//
+	// Talks
+	//
+
+	var talks []*Talk
+
+	// TODO: Unfinished.
+	{
+		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/talks")
+		if err != nil {
+			return err
+		}
+
+		if conf.Drafts {
+			drafts, err := mfile.ReadDir(c, c.SourceDir+"/content/talks-drafts")
+			if err != nil {
+				return err
+			}
+			sources = append(sources, drafts...)
+		}
+
+		for _, s := range sources {
+			source := s
+
+			c.Jobs <- func() (bool, error) {
+				passage, executed, err := renderPassage(c, source)
+				if err != nil {
+					return executed, err
+				}
+
+				passages = append(passages, passage)
+				return executed, nil
 			}
 		}
 	}
