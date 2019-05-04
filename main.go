@@ -33,7 +33,10 @@ import (
 //
 
 func main() {
-	config := &modulr.Config{Log: &log.Logger{Level: log.LevelInfo}}
+	config := &modulr.Config{
+		Log:  &log.Logger{Level: log.LevelInfo},
+		Port: "5004",
+	}
 	modulr.BuildLoop(config, build)
 }
 
