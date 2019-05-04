@@ -23,6 +23,7 @@ import (
 	"github.com/brandur/modulr/mod/mtoc"
 	"github.com/brandur/modulr/mod/myaml"
 	"github.com/brandur/sorg/assets"
+	"github.com/brandur/sorg/atom"
 	"github.com/brandur/sorg/markdown"
 	t "github.com/brandur/sorg/talks"
 	"github.com/brandur/sorg/templatehelpers"
@@ -85,6 +86,12 @@ const (
 
 	// ViewsDir is the source directory for views.
 	ViewsDir = "./views"
+)
+
+// A set of tag constants to hopefully help ensure that this set doesn't grow
+// very much.
+const (
+	tagPostgres Tag = "postgres"
 )
 
 // twitterInfo is some HTML that includes a Twitter link which can be appended
@@ -498,6 +505,7 @@ func build(c *modulr.Context) error {
 	// Articles
 	//
 
+	// Index
 	{
 		c.Jobs <- func() (bool, error) {
 			if !articlesChanged {
@@ -505,6 +513,28 @@ func build(c *modulr.Context) error {
 			}
 
 			return renderArticlesIndex(c, articles)
+		}
+	}
+
+	// Feed (all)
+	{
+		c.Jobs <- func() (bool, error) {
+			if !articlesChanged {
+				return false, nil
+			}
+
+			return renderArticlesFeed(c, articles, nil)
+		}
+	}
+
+	// Feed (Postgres)
+	{
+		c.Jobs <- func() (bool, error) {
+			if !articlesChanged {
+				return false, nil
+			}
+
+			return renderArticlesFeed(c, articles, tagPointer(tagPostgres))
 		}
 	}
 
@@ -684,6 +714,18 @@ func (a *Article) publishingInfo() string {
 		`<p><strong>Published</strong><br>` + a.PublishedAt.Format("January 2, 2006") + `</p> ` +
 		`<p><strong>Location</strong><br>` + a.Location + `</p>` +
 		twitterInfo
+}
+
+// taggedWith returns true if the given tag is in this article's set of tags
+// and false otherwise.
+func (a *Article) taggedWith(tag Tag) bool {
+	for _, t := range a.Tags {
+		if t == tag {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (a *Article) validate(source string) error {
@@ -1239,6 +1281,64 @@ func renderArticlesIndex(c *modulr.Context, articles []*Article) (bool, error) {
 	return true, nil
 }
 
+func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag) (bool, error) {
+	name := "articles"
+	if tag != nil {
+		name = fmt.Sprintf("articles-%s", *tag)
+	}
+	filename := name + ".atom"
+
+	title := "Articles - brandur.org"
+	if tag != nil {
+		title = fmt.Sprintf("Articles (%s) - brandur.org", *tag)
+	}
+
+	feed := &atom.Feed{
+		Title: title,
+		ID:    "tag:brandur.org.org,2013:/" + name,
+
+		Links: []*atom.Link{
+			{Rel: "self", Type: "application/atom+xml", Href: "https://brandur.org/" + filename},
+			{Rel: "alternate", Type: "text/html", Href: "https://brandur.org"},
+		},
+	}
+
+	if len(articles) > 0 {
+		feed.Updated = *articles[0].PublishedAt
+	}
+
+	for i, article := range articles {
+		if tag != nil && !article.taggedWith(*tag) {
+			continue
+		}
+
+		if i >= conf.NumAtomEntries {
+			break
+		}
+
+		entry := &atom.Entry{
+			Title:     article.Title,
+			Content:   &atom.EntryContent{Content: article.Content, Type: "html"},
+			Published: *article.PublishedAt,
+			Updated:   *article.PublishedAt,
+			Link:      &atom.Link{Href: conf.SiteURL + "/" + article.Slug},
+			ID:        "tag:brandur.org," + article.PublishedAt.Format("2006-01-02") + ":" + article.Slug,
+
+			AuthorName: conf.AtomAuthorName,
+			AuthorURI:  conf.AtomAuthorURL,
+		}
+		feed.Entries = append(feed.Entries, entry)
+	}
+
+	f, err := os.Create(path.Join(conf.TargetDir, filename))
+	if err != nil {
+		return true, err
+	}
+	defer f.Close()
+
+	return true, feed.Encode(f, "  ")
+}
+
 func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	// We can't really tell whether we need to rebuild our fragments index, so
 	// we always at least parse every fragment to get its metadata struct, and
@@ -1606,4 +1706,10 @@ func sortTalks(talks []*t.Talk) {
 	sort.Slice(talks, func(i, j int) bool {
 		return talks[j].PublishedAt.Before(*talks[i].PublishedAt)
 	})
+}
+
+// Gets a pointer to a tag just to work around the fact that you can take the
+// address of a constant like `tagPostgres`.
+func tagPointer(tag Tag) *Tag {
+	return &tag
 }
