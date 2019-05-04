@@ -396,6 +396,16 @@ func build(c *modulr.Context) error {
 	}
 
 	//
+	// Robots.txt
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			return renderRobotsTxt(c, c.TargetDir+"/robots.txt")
+		}
+	}
+
+	//
 	// Sequences (read `_meta.yaml`)
 	//
 
@@ -1634,6 +1644,39 @@ func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
 	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
 		c.TargetDir+"/photos/index.html", aceOptions(), locals)
 	return true, err
+}
+
+func renderRobotsTxt(c *modulr.Context, target string) (bool, error) {
+	if !c.FirstRun && !c.Forced() {
+		return false, nil
+	}
+
+	var content string
+	if conf.Drafts {
+		// Allow Twitterbot so that we can preview card images on dev.
+		content = `User-agent: Twitterbot
+Disallow:
+
+User-agent: *
+Disallow: /
+`
+	} else {
+		// Disallow acccess to photos because the content isn't very
+		// interesting for robots and they're bandwidth heavy.
+		content = `User-agent: *
+Disallow: /photographs/
+Disallow: /photos
+`
+	}
+
+	outFile, err := os.Create(target)
+	if err != nil {
+		return true, err
+	}
+	outFile.WriteString(content)
+	outFile.Close()
+
+	return true, nil
 }
 
 func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool, error) {
