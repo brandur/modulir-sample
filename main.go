@@ -524,10 +524,6 @@ func build(c *modulr.Context) error {
 			photo := p
 
 			c.Jobs <- func() (bool, error) {
-				if !photosChanged {
-					return false, nil
-				}
-
 				return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs", photo)
 			}
 		}
@@ -566,10 +562,6 @@ func build(c *modulr.Context) error {
 
 				// Sequence fetch + resize
 				c.Jobs <- func() (bool, error) {
-					if !sequencesChanged[slug] {
-						return false, nil
-					}
-
 					return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs/sequences/"+slug, photo)
 				}
 			}
