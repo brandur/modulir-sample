@@ -207,6 +207,7 @@ func build(c *modulr.Context) error {
 	//
 
 	var articles []*Article
+	articlesChanged := true
 
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
@@ -242,6 +243,7 @@ func build(c *modulr.Context) error {
 	//
 
 	var fragments []*Fragment
+	fragmentsChanged := true
 
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/fragments")
@@ -313,6 +315,7 @@ func build(c *modulr.Context) error {
 	//
 
 	var passages []*Passage
+	passagesChanged := true
 
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/passages")
@@ -461,6 +464,7 @@ func build(c *modulr.Context) error {
 		sortFragments(fragments)
 		sortPassages(passages)
 		sortPhotos(photos)
+		sortTalks(talks)
 	}
 
 	//
@@ -469,6 +473,10 @@ func build(c *modulr.Context) error {
 
 	{
 		c.Jobs <- func() (bool, error) {
+			if !articlesChanged {
+				return false, nil
+			}
+
 			return renderArticlesIndex(c, articles)
 		}
 	}
@@ -479,6 +487,10 @@ func build(c *modulr.Context) error {
 
 	{
 		c.Jobs <- func() (bool, error) {
+			if !fragmentsChanged {
+				return false, nil
+			}
+
 			return renderFragmentsIndex(c, fragments)
 		}
 	}
@@ -489,6 +501,10 @@ func build(c *modulr.Context) error {
 
 	{
 		c.Jobs <- func() (bool, error) {
+			if !articlesChanged && !fragmentsChanged && !photosChanged {
+				return false, nil
+			}
+
 			return renderHome(c, articles, fragments, photos)
 		}
 	}
@@ -499,6 +515,10 @@ func build(c *modulr.Context) error {
 
 	{
 		c.Jobs <- func() (bool, error) {
+			if !passagesChanged {
+				return false, nil
+			}
+
 			return renderPassagesIndex(c, passages)
 		}
 	}
@@ -1514,5 +1534,11 @@ func sortPassages(passages []*Passage) {
 func sortPhotos(photos []*Photo) {
 	sort.Slice(photos, func(i, j int) bool {
 		return photos[j].OccurredAt.Before(*photos[i].OccurredAt)
+	})
+}
+
+func sortTalks(talks []*t.Talk) {
+	sort.Slice(talks, func(i, j int) bool {
+		return talks[j].PublishedAt.Before(*talks[i].PublishedAt)
 	})
 }
