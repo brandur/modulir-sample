@@ -171,6 +171,7 @@ func build(c *modulr.Context) error {
 	//
 
 	commonDirs := []string{
+		c.TargetDir + "/articles",
 		c.TargetDir + "/fragments",
 		c.TargetDir + "/passages",
 		c.TargetDir + "/photos",
@@ -421,7 +422,28 @@ func build(c *modulr.Context) error {
 	{
 		sortArticles(articles)
 		sortFragments(fragments)
+		sortPassages(passages)
 		sortPhotos(photos)
+	}
+
+	//
+	// Articles
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			return renderArticlesIndex(c, articles)
+		}
+	}
+
+	//
+	// Fragments
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			return renderFragmentsIndex(c, fragments)
+		}
 	}
 
 	//
@@ -817,6 +839,18 @@ type PhotoWrapper struct {
 // certain aggregates (so far just Planet Postgres).
 type Tag string
 
+// articleYear holds a collection of articles grouped by year.
+type articleYear struct {
+	Year     int
+	Articles []*Article
+}
+
+// fragmentYear holds a collection of fragments grouped by year.
+type fragmentYear struct {
+	Year      int
+	Fragments []*Fragment
+}
+
 // twitterCard represents a Twitter "card" (i.e. one of those rich media boxes
 // that sometimes appear under tweets official clients) for use in templates.
 type twitterCard struct {
@@ -954,6 +988,38 @@ func getLocals(title string, locals map[string]interface{}) map[string]interface
 	return defaults
 }
 
+func groupArticlesByYear(articles []*Article) []*articleYear {
+	var year *articleYear
+	var years []*articleYear
+
+	for _, article := range articles {
+		if year == nil || year.Year != article.PublishedAt.Year() {
+			year = &articleYear{article.PublishedAt.Year(), nil}
+			years = append(years, year)
+		}
+
+		year.Articles = append(year.Articles, article)
+	}
+
+	return years
+}
+
+func groupFragmentsByYear(fragments []*Fragment) []*fragmentYear {
+	var year *fragmentYear
+	var years []*fragmentYear
+
+	for _, fragment := range fragments {
+		if year == nil || year.Year != fragment.PublishedAt.Year() {
+			year = &fragmentYear{fragment.PublishedAt.Year(), nil}
+			years = append(years, year)
+		}
+
+		year.Fragments = append(year.Fragments, fragment)
+	}
+
+	return years
+}
+
 // Checks if the path exists as a common image format (.jpg or .png only). If
 // so, returns the discovered extension (e.g. "jpg") and boolean true.
 // Otherwise returns an empty string and boolean false.
@@ -1043,6 +1109,22 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	return &article, true, nil
 }
 
+func renderArticlesIndex(c *modulr.Context, articles []*Article) (bool, error) {
+	articlesByYear := groupArticlesByYear(articles)
+
+	locals := getLocals("Articles", map[string]interface{}{
+		"ArticlesByYear": articlesByYear,
+	})
+
+	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/index",
+		c.TargetDir+"/articles/index.html", aceOptions(), locals)
+	if err != nil {
+		return true, err
+	}
+
+	return true, nil
+}
+
 func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	// We can't really tell whether we need to rebuild our fragments index, so
 	// we always at least parse every fragment to get its metadata struct, and
@@ -1099,6 +1181,22 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	}
 
 	return &fragment, true, nil
+}
+
+func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment) (bool, error) {
+	fragmentsByYear := groupFragmentsByYear(fragments)
+
+	locals := getLocals("Fragments", map[string]interface{}{
+		"FragmentsByYear": fragmentsByYear,
+	})
+
+	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/index",
+		c.TargetDir+"/fragments/index.html", aceOptions(), locals)
+	if err != nil {
+		return true, err
+	}
+
+	return true, nil
 }
 
 func renderPassage(c *modulr.Context, source string) (*Passage, bool, error) {
@@ -1347,6 +1445,12 @@ func sortArticles(articles []*Article) {
 func sortFragments(fragments []*Fragment) {
 	sort.Slice(fragments, func(i, j int) bool {
 		return fragments[j].PublishedAt.Before(*fragments[i].PublishedAt)
+	})
+}
+
+func sortPassages(passages []*Passage) {
+	sort.Slice(passages, func(i, j int) bool {
+		return passages[j].PublishedAt.Before(*passages[i].PublishedAt)
 	})
 }
 
