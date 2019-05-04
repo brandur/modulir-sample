@@ -265,6 +265,50 @@ func build(c *modulr.Context) error {
 	}
 
 	//
+	// Sequences (read `_meta.yaml`)
+	//
+
+	sequences := make(map[string][]*Photo)
+	sequencesChanged := make(map[string]bool)
+
+	{
+		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/sequences")
+		if err != nil {
+			return err
+		}
+
+		if conf.Drafts {
+			drafts, err := mfile.ReadDir(c, c.SourceDir+"/content/sequences-drafts")
+			if err != nil {
+				return err
+			}
+			sources = append(sources, drafts...)
+		}
+
+		for _, s := range sources {
+			source := s
+
+			c.Jobs <- func() (bool, error) {
+				var err error
+				var photosWrapper PhotoWrapper
+
+				slug := path.Base(source)
+
+				// Always force this job so that we can get an accurate job count
+				// when it comes to resizing photos below.
+				sequencesChanged[slug], err = myaml.ParseFile(
+					c.ForcedContext(), source+"/_meta.yaml", &photosWrapper)
+				if err != nil {
+					return true, err
+				}
+
+				sequences[slug] = photosWrapper.Photos
+				return true, nil
+			}
+		}
+	}
+
+	//
 	// Phase 2
 	//
 
@@ -315,6 +359,49 @@ func build(c *modulr.Context) error {
 				}
 
 				return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs", photo)
+			}
+		}
+	}
+
+	//
+	// Sequences (index / fetch + resize)
+	//
+
+	{
+		for s, p := range sequences {
+			slug := s
+			photos := p
+
+			var err error
+			err = mfile.EnsureDir(c, c.TargetDir+"/sequences/"+slug)
+			if err != nil {
+				return err
+			}
+			err = mfile.EnsureDir(c, c.SourceDir+"/content/photographs/sequences/"+slug)
+			if err != nil {
+				return err
+			}
+
+			for _, p := range photos {
+				photo := p
+
+				// Sequence page
+				c.Jobs <- func() (bool, error) {
+					if !sequencesChanged[slug] {
+						return false, nil
+					}
+
+					return renderSequence(c, slug, photo)
+				}
+
+				// Sequence fetch + resize
+				c.Jobs <- func() (bool, error) {
+					if !sequencesChanged[slug] {
+						return false, nil
+					}
+
+					return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs/sequences/"+slug, photo)
+				}
 			}
 		}
 	}
@@ -629,7 +716,7 @@ func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, err
 		{sourceNoExt + "_large@2x.jpg", 3000},
 	}
 	for _, resize := range resizeMatrix {
-		err := resizeImage(c, photo.OriginalImageURL, resize.Target, resize.Width)
+		err := resizeImage(c, originalPath, resize.Target, resize.Width)
 		if err != nil {
 			return true, errors.Wrapf(err, "Error resizing photograph: %s", photo.Slug)
 		}
@@ -941,6 +1028,23 @@ func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
 	// render.
 	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
 		c.TargetDir+"/photos/index.html", aceOptions(), locals)
+	return true, err
+}
+
+func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool, error) {
+	title := fmt.Sprintf("%s — %s", photo.Title, sequenceName)
+	description := string(mmarkdown.Render(c, []byte(photo.Description)))
+
+	locals := getLocals(title, map[string]interface{}{
+		"BodyClass":     "sequences-photo",
+		"Description":   description,
+		"Photo":         photo,
+		"SequenceName":  sequenceName,
+		"ViewportWidth": 600,
+	})
+
+	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/sequences/photo",
+		path.Join(c.TargetDir, "sequences", sequenceName, photo.Slug), aceOptions(), locals)
 	return true, err
 }
 
