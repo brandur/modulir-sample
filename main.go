@@ -30,9 +30,15 @@ import (
 	"gopkg.in/russross/blackfriday.v2"
 )
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//
 //
 // Main
 //
+//
+//
+//////////////////////////////////////////////////////////////////////////////
 
 func main() {
 	config := &modulr.Config{
@@ -42,9 +48,15 @@ func main() {
 	modulr.BuildLoop(config, build)
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//
 //
 // Constants
 //
+//
+//
+//////////////////////////////////////////////////////////////////////////////
 
 const (
 	// AbsoluteURL is the site's absolute URL. It's usually preferable that
@@ -56,6 +68,10 @@ const (
 
 	// MainLayout is the site's main layout.
 	MainLayout = LayoutsDir + "/main"
+
+	// PassageLayout is the layout for a Passages & Glass issue (an email
+	// newsletter).
+	PassageLayout = LayoutsDir + "/passages"
 
 	// Release is the asset version of the site. Bump when any assets are
 	// updated to blow away any browser caches.
@@ -74,9 +90,15 @@ const (
 const twitterInfo = `<p>Find me on Twitter at ` +
 	`<strong><a href="https://twitter.com/brandur">@brandur</a></strong>.</p>`
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//
 //
 // Variables
 //
+//
+//
+//////////////////////////////////////////////////////////////////////////////
 
 // Left as a global for now for the sake of convenience, but it's not used in
 // very many places and can probably be refactored as a local if desired.
@@ -84,9 +106,15 @@ var conf Conf
 
 var renderComplexMarkdown func(string, *markdown.RenderOptions) string
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//
 //
 // Init
 //
+//
+//
+//////////////////////////////////////////////////////////////////////////////
 
 // init runs on package initialization.
 func init() {
@@ -95,9 +123,15 @@ func init() {
 	})
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//
 //
 // Build function
 //
+//
+//
+//////////////////////////////////////////////////////////////////////////////
 
 func build(c *modulr.Context) error {
 	//
@@ -138,6 +172,7 @@ func build(c *modulr.Context) error {
 
 	commonDirs := []string{
 		c.TargetDir + "/fragments",
+		c.TargetDir + "/passages",
 		c.TargetDir + "/photos",
 		TempDir,
 	}
@@ -271,6 +306,41 @@ func build(c *modulr.Context) error {
 	}
 
 	//
+	// Passages
+	//
+
+	var passages []*Passage
+
+	{
+		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/passages")
+		if err != nil {
+			return err
+		}
+
+		if conf.Drafts {
+			drafts, err := mfile.ReadDir(c, c.SourceDir+"/content/passages-drafts")
+			if err != nil {
+				return err
+			}
+			sources = append(sources, drafts...)
+		}
+
+		for _, s := range sources {
+			source := s
+
+			c.Jobs <- func() (bool, error) {
+				passage, executed, err := renderPassage(c, source)
+				if err != nil {
+					return executed, err
+				}
+
+				passages = append(passages, passage)
+				return executed, nil
+			}
+		}
+	}
+
+	//
 	// Photos (read `_meta.yaml`)
 	//
 
@@ -365,6 +435,16 @@ func build(c *modulr.Context) error {
 	}
 
 	//
+	// Passages
+	//
+
+	{
+		c.Jobs <- func() (bool, error) {
+			return renderPassagesIndex(c, passages)
+		}
+	}
+
+	//
 	// Photos (index / fetch + resize)
 	//
 
@@ -440,9 +520,15 @@ func build(c *modulr.Context) error {
 	return nil
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//
 //
 // Structs
 //
+//
+//
+//////////////////////////////////////////////////////////////////////////////
 
 // Article represents an article to be rendered.
 type Article struct {
@@ -648,6 +734,48 @@ type Page struct {
 	Title string `yaml:"title"`
 }
 
+// Passage represents a single burst of the Passage & Glass newsletter to be
+// rendered.
+type Passage struct {
+	// Content is the HTML content of the passage. It isn't included as YAML
+	// frontmatter, and is rather split out of an passage's Markdown file,
+	// rendered, and then added separately.
+	Content string `yaml:"-"`
+
+	// ContentRaw is the raw Markdown content of the passage.
+	ContentRaw string `yaml:"-"`
+
+	// Draft indicates that the passage is not yet published.
+	Draft bool `yaml:"-"`
+
+	// Issue is the issue number of the passage like "001". Notably, it's a
+	// number, but zero-padded.
+	Issue string `yaml:"-"`
+
+	// PublishedAt is when the passage was published.
+	PublishedAt *time.Time `yaml:"published_at"`
+
+	// Slug is a unique identifier for the passage that also helps determine
+	// where it's addressable by URL. It's a combination of an issue number
+	// (like `001` and a short identifier).
+	Slug string `yaml:"-"`
+
+	// Title is the passage's title.
+	Title string `yaml:"title"`
+}
+
+func (p *Passage) validate(source string) error {
+	if p.Title == "" {
+		return fmt.Errorf("No title for passage: %v", source)
+	}
+
+	if p.PublishedAt == nil {
+		return fmt.Errorf("No publish date for passage: %v", source)
+	}
+
+	return nil
+}
+
 // Photo is a photograph.
 type Photo struct {
 	// Description is the description of the photograph.
@@ -704,9 +832,15 @@ type twitterCard struct {
 	ImageURL string
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//
+//
 //
 // Private
 //
+//
+//
+//////////////////////////////////////////////////////////////////////////////
 
 func aceOptions() *ace.Options {
 	return &ace.Options{FuncMap: templatehelpers.FuncMap}
@@ -965,6 +1099,79 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	}
 
 	return &fragment, true, nil
+}
+
+func renderPassage(c *modulr.Context, source string) (*Passage, bool, error) {
+	// We can't really tell whether we need to rebuild our passages index, so
+	// we always at least parse every passage to get its metadata struct, and
+	// then rebuild the index every time. If the source was unchanged though,
+	// we stop after getting its metadata.
+	forceC := c.ForcedContext()
+
+	var passage Passage
+	data, changed, err := myaml.ParseFileFrontmatter(forceC, source, &passage)
+	if err != nil {
+		return nil, true, err
+	}
+
+	err = passage.validate(source)
+	if err != nil {
+		return nil, true, err
+	}
+
+	passage.ContentRaw = string(data)
+	passage.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
+	passage.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
+
+	slugParts := strings.Split(passage.Slug, "-")
+	if len(slugParts) < 2 {
+		return nil, true, fmt.Errorf("Expected passage slug to contain issue number: %v",
+			passage.Slug)
+	}
+	passage.Issue = slugParts[0]
+
+	// See comment above: we always parse metadata, but if the file was
+	// unchanged (determined from the `executed` result), it's okay not to
+	// re-render it.
+	if !changed && !c.Forced() {
+		return &passage, true, nil
+	}
+
+	email := false
+
+	passage.Content = renderComplexMarkdown(passage.ContentRaw, &markdown.RenderOptions{
+		AbsoluteURLs:    email,
+		NoFootnoteLinks: email,
+		NoHeaderLinks:   email,
+		NoRetina:        true,
+	})
+
+	locals := getLocals(passage.Title, map[string]interface{}{
+		"InEmail": false,
+		"Passage": passage,
+	})
+
+	_, err = mace.Render(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/show",
+		c.TargetDir+"/passages/"+passage.Slug, aceOptions(), locals)
+	if err != nil {
+		return nil, true, err
+	}
+
+	return &passage, true, nil
+}
+
+func renderPassagesIndex(c *modulr.Context, passages []*Passage) (bool, error) {
+	locals := getLocals("Passages", map[string]interface{}{
+		"Passages": passages,
+	})
+
+	_, err := mace.Render(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/index",
+		c.TargetDir+"/passages/index.html", aceOptions(), locals)
+	if err != nil {
+		return true, err
+	}
+
+	return true, nil
 }
 
 func renderHome(c *modulr.Context, articles []*Article, fragments []*Fragment, photos []*Photo) (bool, error) {
