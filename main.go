@@ -118,6 +118,8 @@ var articles []*Article
 // very many places and can probably be refactored as a local if desired.
 var conf Conf
 
+var fragments []*Fragment
+
 var renderComplexMarkdown func(string, *markdown.RenderOptions) string
 
 //////////////////////////////////////////////////////////////////////////////
@@ -270,8 +272,8 @@ func build(c *modulr.Context) error {
 	// Fragments
 	//
 
-	var fragments []*Fragment
-	fragmentsChanged := true
+	var fragmentsChanged bool
+	var fragmentsMu sync.Mutex
 
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/fragments")
@@ -291,13 +293,8 @@ func build(c *modulr.Context) error {
 			source := s
 
 			c.Jobs <- func() (bool, error) {
-				fragment, executed, err := renderFragment(c, source)
-				if err != nil {
-					return executed, err
-				}
-
-				fragments = append(fragments, fragment)
-				return executed, nil
+				return renderFragment(c, source,
+					fragments, &fragmentsChanged, &fragmentsMu)
 			}
 		}
 	}
@@ -1787,14 +1784,25 @@ func groupTwitterByYearAndMonth(tweets []*Tweet) []*tweetYear {
 }
 
 func insertOrReplaceArticle(articles []*Article, article *Article) {
-	for i, article := range articles {
-		if article.Slug == article.Slug {
+	for i, a := range articles {
+		if article.Slug == a.Slug {
 			articles[i] = article
 			return
 		}
 	}
 
 	articles = append(articles, article)
+}
+
+func insertOrReplaceFragment(fragments []*Fragment, fragment *Fragment) {
+	for i, f := range fragments {
+		if fragment.Slug == f.Slug {
+			fragments[i] = fragment
+			return
+		}
+	}
+
+	fragments = append(fragments, fragment)
 }
 
 // Checks if the path exists as a common image format (.jpg or .png only). If
@@ -1823,7 +1831,7 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 		return true, err
 	}
 
-	if !changed {
+	if !changed && !c.Forced() {
 		return false, nil
 	}
 
@@ -1963,22 +1971,20 @@ func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag) (bool,
 	return true, feed.Encode(f, "  ")
 }
 
-func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
-	// We can't really tell whether we need to rebuild our fragments index, so
-	// we always at least parse every fragment to get its metadata struct, and
-	// then rebuild the index every time. If the source was unchanged though,
-	// we stop after getting its metadata.
-	forceC := c.ForcedContext()
-
+func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fragmentsChanged *bool, mu *sync.Mutex) (bool, error) {
 	var fragment Fragment
-	data, changed, err := myaml.ParseFileFrontmatter(forceC, source, &fragment)
+	data, changed, err := myaml.ParseFileFrontmatter(c, source, &fragment)
 	if err != nil {
-		return nil, true, err
+		return true, err
+	}
+
+	if !changed && !c.Forced() {
+		return false, nil
 	}
 
 	err = fragment.validate(source)
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
 	fragment.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
@@ -1988,7 +1994,7 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	// unchanged (determined from the `executed` result), it's okay not to
 	// re-render it.
 	if !changed && !c.Forced() {
-		return &fragment, true, nil
+		return true, nil
 	}
 
 	fragment.Content = renderComplexMarkdown(string(data), nil)
@@ -2015,10 +2021,15 @@ func renderFragment(c *modulr.Context, source string) (*Fragment, bool, error) {
 	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/show",
 		path.Join(c.TargetDir, "fragments", fragment.Slug), aceOptions(), locals)
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
-	return &fragment, true, nil
+	mu.Lock()
+	insertOrReplaceFragment(fragments, &fragment)
+	fragmentsChanged = boolPointer(true)
+	mu.Unlock()
+
+	return true, nil
 }
 
 func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment) (bool, error) {
