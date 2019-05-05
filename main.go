@@ -120,6 +120,8 @@ var conf Conf
 
 var fragments []*Fragment
 
+var passages []*Passage
+
 var renderComplexMarkdown func(string, *markdown.RenderOptions) string
 
 //////////////////////////////////////////////////////////////////////////////
@@ -349,8 +351,8 @@ func build(c *modulr.Context) error {
 	// Passages
 	//
 
-	var passages []*Passage
-	passagesChanged := true
+	var passagesChanged bool
+	var passagesMu sync.Mutex
 
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/passages")
@@ -370,13 +372,8 @@ func build(c *modulr.Context) error {
 			source := s
 
 			c.Jobs <- func() (bool, error) {
-				passage, executed, err := renderPassage(c, source)
-				if err != nil {
-					return executed, err
-				}
-
-				passages = append(passages, passage)
-				return executed, nil
+				return renderPassage(c, source,
+					passages, &passagesChanged, &passagesMu)
 			}
 		}
 	}
@@ -1805,6 +1802,17 @@ func insertOrReplaceFragment(fragments []*Fragment, fragment *Fragment) {
 	fragments = append(fragments, fragment)
 }
 
+func insertOrReplacePassage(passages []*Passage, passage *Passage) {
+	for i, p := range passages {
+		if passage.Slug == p.Slug {
+			passages[i] = passage
+			return
+		}
+	}
+
+	passages = append(passages, passage)
+}
+
 // Checks if the path exists as a common image format (.jpg or .png only). If
 // so, returns the discovered extension (e.g. "jpg") and boolean true.
 // Otherwise returns an empty string and boolean false.
@@ -1842,13 +1850,6 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 
 	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
 	article.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
-
-	// See comment above: we always parse metadata, but if the file was
-	// unchanged (determined from the `executed` result), it's okay not to
-	// re-render it.
-	if !changed && !c.Forced() {
-		return true, nil
-	}
 
 	article.Content = renderComplexMarkdown(string(data), nil)
 
@@ -1990,13 +1991,6 @@ func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fra
 	fragment.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
 	fragment.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
 
-	// See comment above: we always parse metadata, but if the file was
-	// unchanged (determined from the `executed` result), it's okay not to
-	// re-render it.
-	if !changed && !c.Forced() {
-		return true, nil
-	}
-
 	fragment.Content = renderComplexMarkdown(string(data), nil)
 
 	card := &twitterCard{
@@ -2091,22 +2085,20 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment) (bool, error
 	return true, nil
 }
 
-func renderPassage(c *modulr.Context, source string) (*Passage, bool, error) {
-	// We can't really tell whether we need to rebuild our passages index, so
-	// we always at least parse every passage to get its metadata struct, and
-	// then rebuild the index every time. If the source was unchanged though,
-	// we stop after getting its metadata.
-	forceC := c.ForcedContext()
-
+func renderPassage(c *modulr.Context, source string, passages []*Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
 	var passage Passage
-	data, changed, err := myaml.ParseFileFrontmatter(forceC, source, &passage)
+	data, changed, err := myaml.ParseFileFrontmatter(c, source, &passage)
 	if err != nil {
-		return nil, true, err
+		return true, err
+	}
+
+	if !changed && !c.Forced() {
+		return false, nil
 	}
 
 	err = passage.validate(source)
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
 	passage.ContentRaw = string(data)
@@ -2115,17 +2107,10 @@ func renderPassage(c *modulr.Context, source string) (*Passage, bool, error) {
 
 	slugParts := strings.Split(passage.Slug, "-")
 	if len(slugParts) < 2 {
-		return nil, true, fmt.Errorf("Expected passage slug to contain issue number: %v",
+		return true, fmt.Errorf("Expected passage slug to contain issue number: %v",
 			passage.Slug)
 	}
 	passage.Issue = slugParts[0]
-
-	// See comment above: we always parse metadata, but if the file was
-	// unchanged (determined from the `executed` result), it's okay not to
-	// re-render it.
-	if !changed && !c.Forced() {
-		return &passage, true, nil
-	}
 
 	email := false
 
@@ -2144,10 +2129,15 @@ func renderPassage(c *modulr.Context, source string) (*Passage, bool, error) {
 	_, err = mace.Render(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/show",
 		c.TargetDir+"/passages/"+passage.Slug, aceOptions(), locals)
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
-	return &passage, true, nil
+	mu.Lock()
+	insertOrReplacePassage(passages, &passage)
+	passagesChanged = boolPointer(true)
+	mu.Unlock()
+
+	return true, nil
 }
 
 func renderPassagesIndex(c *modulr.Context, passages []*Passage) (bool, error) {
