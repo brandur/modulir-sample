@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/brandur/modulr"
@@ -110,6 +111,8 @@ const twitterInfo = `<p>Find me on Twitter at ` +
 //
 //
 //////////////////////////////////////////////////////////////////////////////
+
+var articles []*Article
 
 // Left as a global for now for the sake of convenience, but it's not used in
 // very many places and can probably be refactored as a local if desired.
@@ -236,8 +239,8 @@ func build(c *modulr.Context) error {
 	// Articles
 	//
 
-	var articles []*Article
-	articlesChanged := true
+	var articlesChanged bool
+	var articlesMu sync.Mutex
 
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/articles")
@@ -257,13 +260,8 @@ func build(c *modulr.Context) error {
 			source := s
 
 			c.Jobs <- func() (bool, error) {
-				article, executed, err := renderArticle(c, source)
-				if err != nil {
-					return executed, err
-				}
-
-				articles = append(articles, article)
-				return executed, nil
+				return renderArticle(c, source,
+					articles, &articlesChanged, &articlesMu)
 			}
 		}
 	}
@@ -1145,6 +1143,10 @@ func aceOptions() *ace.Options {
 	return &ace.Options{FuncMap: templatehelpers.FuncMap}
 }
 
+func boolPointer(v bool) *bool {
+	return &v
+}
+
 func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, error) {
 	sourceDir := c.SourceDir + "/content/javascripts"
 
@@ -1784,6 +1786,17 @@ func groupTwitterByYearAndMonth(tweets []*Tweet) []*tweetYear {
 	return years
 }
 
+func insertOrReplaceArticle(articles []*Article, article *Article) {
+	for i, article := range articles {
+		if article.Slug == article.Slug {
+			articles[i] = article
+			return
+		}
+	}
+
+	articles = append(articles, article)
+}
+
 // Checks if the path exists as a common image format (.jpg or .png only). If
 // so, returns the discovered extension (e.g. "jpg") and boolean true.
 // Otherwise returns an empty string and boolean false.
@@ -1803,22 +1816,20 @@ func pathAsImage(extensionlessPath string) (string, bool) {
 	return "", false
 }
 
-func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
-	// We can't really tell whether we need to rebuild our articles index, so
-	// we always at least parse every article to get its metadata struct, and
-	// then rebuild the index every time. If the source was unchanged though,
-	// we stop after getting its metadata.
-	forceC := c.ForcedContext()
-
+func renderArticle(c *modulr.Context, source string, articles []*Article, articlesChanged *bool, mu *sync.Mutex) (bool, error) {
 	var article Article
-	data, changed, err := myaml.ParseFileFrontmatter(forceC, source, &article)
+	data, changed, err := myaml.ParseFileFrontmatter(c, source, &article)
 	if err != nil {
-		return nil, true, err
+		return true, err
+	}
+
+	if !changed {
+		return false, nil
 	}
 
 	err = article.validate(source)
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
 	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
@@ -1828,14 +1839,14 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	// unchanged (determined from the `executed` result), it's okay not to
 	// re-render it.
 	if !changed && !c.Forced() {
-		return &article, true, nil
+		return true, nil
 	}
 
 	article.Content = renderComplexMarkdown(string(data), nil)
 
 	article.TOC, err = mtoc.RenderFromHTML(article.Content)
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
 	format, ok := pathAsImage(
@@ -1867,10 +1878,15 @@ func renderArticle(c *modulr.Context, source string) (*Article, bool, error) {
 	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/show",
 		path.Join(c.TargetDir, article.Slug), aceOptions(), locals)
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
-	return &article, true, nil
+	mu.Lock()
+	insertOrReplaceArticle(articles, &article)
+	articlesChanged = boolPointer(true)
+	mu.Unlock()
+
+	return true, nil
 }
 
 func renderArticlesIndex(c *modulr.Context, articles []*Article) (bool, error) {
