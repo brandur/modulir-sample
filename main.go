@@ -126,6 +126,8 @@ var photos []*Photo
 
 var renderComplexMarkdown func(string, *markdown.RenderOptions) string
 
+var sequences map[string][]*Photo
+
 //////////////////////////////////////////////////////////////////////////////
 //
 //
@@ -141,6 +143,8 @@ func init() {
 	renderComplexMarkdown = markdown.ComposeRenderStack(func(source []byte) []byte {
 		return blackfriday.Run(source)
 	})
+
+	sequences = make(map[string][]*Photo)
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -450,7 +454,6 @@ func build(c *modulr.Context) error {
 	// Sequences (read `_meta.yaml`)
 	//
 
-	sequences := make(map[string][]*Photo)
 	sequencesChanged := make(map[string]bool)
 
 	{
@@ -468,19 +471,24 @@ func build(c *modulr.Context) error {
 		}
 
 		for _, s := range sources {
-			source := s
+			sequencePath := s
 
-			name := fmt.Sprintf("sequence %s _meta.yaml", filepath.Base(source))
+			name := fmt.Sprintf("sequence %s _meta.yaml", filepath.Base(sequencePath))
 			c.AddJob(name, func() (bool, error) {
+				source := sequencePath + "/_meta.yaml"
+
+				if !c.Changed(source) && !c.Forced() {
+					return false, nil
+				}
+
 				var err error
 				var photosWrapper PhotoWrapper
 
-				slug := path.Base(source)
+				slug := path.Base(sequencePath)
 
 				// Always force this job so that we can get an accurate job count
 				// when it comes to resizing photos below.
-				sequencesChanged[slug], err = myaml.ParseFile(
-					c.ForcedContext(), source+"/_meta.yaml", &photosWrapper)
+				sequencesChanged[slug], err = myaml.ParseFile(c.ForcedContext(), source, &photosWrapper)
 				if err != nil {
 					return true, err
 				}
