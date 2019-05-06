@@ -182,7 +182,7 @@ func build(c *modulr.Context) error {
 	}
 
 	//
-	// Phase 1
+	// PHASE 1
 	//
 	// The build is broken into phases because some jobs depend on jobs that
 	// ran before them. For example, we need to parse all our article metadata
@@ -229,7 +229,12 @@ func build(c *modulr.Context) error {
 
 	commonSymlinks := [][2]string{
 		{c.SourceDir + "/content/fonts", c.TargetDir + "/fonts"},
-		{c.SourceDir + "/content/images", c.TargetDir + "/images"},
+		{c.SourceDir + "/content/images", c.TargetDir + "/assets/images"},
+
+		// For backwards compatibility as many emails with this style of path
+		// have already gone out.
+		{c.SourceDir + "/content/images/passages", c.TargetDir + "/assets/passages"},
+
 		{c.SourceDir + "/content/photographs", c.TargetDir + "/photographs"},
 	}
 	for _, link := range commonSymlinks {
@@ -263,10 +268,11 @@ func build(c *modulr.Context) error {
 		for _, s := range sources {
 			source := s
 
-			c.Jobs <- func() (bool, error) {
+			name := fmt.Sprintf("article: %s", filepath.Base(source))
+			c.AddJob(name, func() (bool, error) {
 				return renderArticle(c, source,
 					articles, &articlesChanged, &articlesMu)
-			}
+			})
 		}
 	}
 
@@ -294,10 +300,11 @@ func build(c *modulr.Context) error {
 		for _, s := range sources {
 			source := s
 
-			c.Jobs <- func() (bool, error) {
+			name := fmt.Sprintf("fragment: %s", filepath.Base(source))
+			c.AddJob(name, func() (bool, error) {
 				return renderFragment(c, source,
 					fragments, &fragmentsChanged, &fragmentsMu)
-			}
+			})
 		}
 	}
 
@@ -306,9 +313,9 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("javascripts", func() (bool, error) {
 			return compileJavascripts(c, versionedAssetsDir)
-		}
+		})
 	}
 
 	//
@@ -341,9 +348,10 @@ func build(c *modulr.Context) error {
 		for _, s := range sources {
 			source := s
 
-			c.Jobs <- func() (bool, error) {
+			name := fmt.Sprintf("page: %s", filepath.Base(source))
+			c.AddJob(name, func() (bool, error) {
 				return renderPage(pageContext, meta, source)
-			}
+			})
 		}
 	}
 
@@ -371,10 +379,11 @@ func build(c *modulr.Context) error {
 		for _, s := range sources {
 			source := s
 
-			c.Jobs <- func() (bool, error) {
+			name := fmt.Sprintf("passage: %s", filepath.Base(source))
+			c.AddJob(name, func() (bool, error) {
 				return renderPassage(c, source,
 					passages, &passagesChanged, &passagesMu)
-			}
+			})
 		}
 	}
 
@@ -386,7 +395,7 @@ func build(c *modulr.Context) error {
 	var photosChanged bool
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("photos _meta.yaml", func() (bool, error) {
 			var err error
 			var photosWrapper PhotoWrapper
 
@@ -400,7 +409,7 @@ func build(c *modulr.Context) error {
 
 			photos = photosWrapper.Photos
 			return true, nil
-		}
+		})
 	}
 
 	//
@@ -408,9 +417,9 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("reading", func() (bool, error) {
 			return renderReading(c, db)
-		}
+		})
 	}
 
 	//
@@ -418,9 +427,9 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("robots.txt", func() (bool, error) {
 			return renderRobotsTxt(c)
-		}
+		})
 	}
 
 	//
@@ -428,9 +437,9 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("runs", func() (bool, error) {
 			return renderRuns(c, db)
-		}
+		})
 	}
 
 	//
@@ -457,7 +466,8 @@ func build(c *modulr.Context) error {
 		for _, s := range sources {
 			source := s
 
-			c.Jobs <- func() (bool, error) {
+			name := fmt.Sprintf("sequence %s _meta.yaml", filepath.Base(source))
+			c.AddJob(name, func() (bool, error) {
 				var err error
 				var photosWrapper PhotoWrapper
 
@@ -473,7 +483,7 @@ func build(c *modulr.Context) error {
 
 				sequences[slug] = photosWrapper.Photos
 				return true, nil
-			}
+			})
 		}
 	}
 
@@ -482,9 +492,9 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("stylesheets", func() (bool, error) {
 			return compileStylesheets(c, versionedAssetsDir)
-		}
+		})
 	}
 
 	//
@@ -510,7 +520,8 @@ func build(c *modulr.Context) error {
 		for _, s := range sources {
 			source := s
 
-			c.Jobs <- func() (bool, error) {
+			name := fmt.Sprintf("talk: %s", filepath.Base(source))
+			c.AddJob(name, func() (bool, error) {
 				talk, executed, err := renderTalk(c, source)
 				if !executed || err != nil {
 					return executed, err
@@ -518,7 +529,7 @@ func build(c *modulr.Context) error {
 
 				talks = append(talks, talk)
 				return true, nil
-			}
+			})
 		}
 	}
 
@@ -527,15 +538,15 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("twitter", func() (bool, error) {
 			return renderTwitter(c, db)
-		}
+		})
 	}
 
 	//
 	//
 	//
-	// pHASE 2
+	// PHASE 2
 	//
 	//
 	//
@@ -559,35 +570,35 @@ func build(c *modulr.Context) error {
 
 	// Index
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("articles index", func() (bool, error) {
 			if !articlesChanged {
 				return false, nil
 			}
 
 			return renderArticlesIndex(c, articles)
-		}
+		})
 	}
 
 	// Feed (all)
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("articles feed", func() (bool, error) {
 			if !articlesChanged {
 				return false, nil
 			}
 
 			return renderArticlesFeed(c, articles, nil)
-		}
+		})
 	}
 
 	// Feed (Postgres)
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("articles feed (postgres)", func() (bool, error) {
 			if !articlesChanged {
 				return false, nil
 			}
 
 			return renderArticlesFeed(c, articles, tagPointer(tagPostgres))
-		}
+		})
 	}
 
 	//
@@ -596,24 +607,24 @@ func build(c *modulr.Context) error {
 
 	// Index
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("fragments index", func() (bool, error) {
 			if !fragmentsChanged {
 				return false, nil
 			}
 
 			return renderFragmentsIndex(c, fragments)
-		}
+		})
 	}
 
 	// Feed
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("fragments feed", func() (bool, error) {
 			if !fragmentsChanged {
 				return false, nil
 			}
 
 			return renderFragmentsFeed(c, fragments)
-		}
+		})
 	}
 
 	//
@@ -621,13 +632,13 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("home", func() (bool, error) {
 			if !articlesChanged && !fragmentsChanged && !photosChanged {
 				return false, nil
 			}
 
 			return renderHome(c, articles, fragments, photos)
-		}
+		})
 	}
 
 	//
@@ -635,13 +646,13 @@ func build(c *modulr.Context) error {
 	//
 
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("passages index", func() (bool, error) {
 			if !passagesChanged {
 				return false, nil
 			}
 
 			return renderPassagesIndex(c, passages)
-		}
+		})
 	}
 
 	//
@@ -650,13 +661,13 @@ func build(c *modulr.Context) error {
 
 	// Photo index
 	{
-		c.Jobs <- func() (bool, error) {
+		c.AddJob("photos index", func() (bool, error) {
 			if !photosChanged {
 				return false, nil
 			}
 
 			return renderPhotoIndex(c, photos)
-		}
+		})
 	}
 
 	// Photo fetch + resize
@@ -664,9 +675,10 @@ func build(c *modulr.Context) error {
 		for _, p := range photos {
 			photo := p
 
-			c.Jobs <- func() (bool, error) {
+			name := fmt.Sprintf("photo: %s", photo.Slug)
+			c.AddJob(name, func() (bool, error) {
 				return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs", photo)
-			}
+			})
 		}
 	}
 
@@ -693,18 +705,20 @@ func build(c *modulr.Context) error {
 				photo := p
 
 				// Sequence page
-				c.Jobs <- func() (bool, error) {
+				name := fmt.Sprintf("sequence %s: %s", slug, photo.Slug)
+				c.AddJob(name, func() (bool, error) {
 					if !sequencesChanged[slug] {
 						return false, nil
 					}
 
 					return renderSequence(c, slug, photo)
-				}
+				})
 
 				// Sequence fetch + resize
-				c.Jobs <- func() (bool, error) {
+				name = fmt.Sprintf("sequence %s photo: %s", slug, photo.Slug)
+				c.AddJob(name, func() (bool, error) {
 					return fetchAndResizePhoto(c, c.SourceDir+"/content/photographs/sequences/"+slug, photo)
-				}
+				})
 			}
 		}
 	}
