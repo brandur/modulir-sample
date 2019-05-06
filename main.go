@@ -112,21 +112,23 @@ const twitterInfo = `<p>Find me on Twitter at ` +
 //
 //////////////////////////////////////////////////////////////////////////////
 
-var articles []*Article
+// These are all objects that are persisted between build loops so that if
+// necessary we can rebuild jobs that depend on them like index pages without
+// reparsing all the source material. In each case we try to only reparse the
+// sources if those source files actually changed.
+var (
+	articles  []*Article
+	fragments []*Fragment
+	passages  []*Passage
+	photos    []*Photo
+	sequences map[string][]*Photo
+)
 
 // Left as a global for now for the sake of convenience, but it's not used in
 // very many places and can probably be refactored as a local if desired.
 var conf Conf
 
-var fragments []*Fragment
-
-var passages []*Passage
-
-var photos []*Photo
-
 var renderComplexMarkdown func(string, *markdown.RenderOptions) string
-
-var sequences map[string][]*Photo
 
 //////////////////////////////////////////////////////////////////////////////
 //
