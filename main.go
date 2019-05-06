@@ -122,6 +122,8 @@ var fragments []*Fragment
 
 var passages []*Passage
 
+var photos []*Photo
+
 var renderComplexMarkdown func(string, *markdown.RenderOptions) string
 
 //////////////////////////////////////////////////////////////////////////////
@@ -391,18 +393,20 @@ func build(c *modulr.Context) error {
 	// Photos (read `_meta.yaml`)
 	//
 
-	var photos []*Photo
 	var photosChanged bool
 
 	{
 		c.AddJob("photos _meta.yaml", func() (bool, error) {
+			source := c.SourceDir + "/content/photographs/_meta.yaml"
+
+			if !c.Changed(source) && !c.Forced() {
+				return false, nil
+			}
+
 			var err error
 			var photosWrapper PhotoWrapper
 
-			// Always force this job so that we can get an accurate job count
-			// when it comes to resizing photos below.
-			photosChanged, err = myaml.ParseFile(
-				c.ForcedContext(), c.SourceDir+"/content/photographs/_meta.yaml", &photosWrapper)
+			photosChanged, err = myaml.ParseFile(c.ForcedContext(), source, &photosWrapper)
 			if err != nil {
 				return true, err
 			}
