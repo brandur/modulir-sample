@@ -77,7 +77,7 @@ const (
 
 	// PassageLayout is the layout for a Passages & Glass issue (an email
 	// newsletter).
-	PassageLayout = LayoutsDir + "/passages"
+	PassageLayout = LayoutsDir + "/passages.ace"
 
 	// Release is the asset version of the site. Bump when any assets are
 	// updated to blow away any browser caches.
@@ -2172,14 +2172,22 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment) (bool, error
 }
 
 func renderPassage(c *modulr.Context, source string, passages []*Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
-	var passage Passage
-	data, changed, err := myaml.ParseFileFrontmatter2(c, source, &passage)
-	if err != nil {
-		return true, err
+	sourceChanged := c.Changed(source)
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			PassageLayout,
+			ViewsDir + "/passages/show.ace",
+		},
+		partialViews...,
+	)...)
+	if !sourceChanged && !viewsChanged && !c.Forced() {
+		return false, nil
 	}
 
-	if !changed && !c.Forced() {
-		return false, nil
+	var passage Passage
+	data, err := myaml.ParseFileFrontmatter(c, source, &passage)
+	if err != nil {
+		return true, err
 	}
 
 	err = passage.validate(source)
@@ -2212,8 +2220,8 @@ func renderPassage(c *modulr.Context, source string, passages []*Passage, passag
 		"Passage": passage,
 	})
 
-	_, err = mace.Render2(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/show",
-		c.TargetDir+"/passages/"+passage.Slug, aceOptions(true), locals)
+	err = mace.Render(c, PassageLayout, ViewsDir+"/passages/show.ace",
+		c.TargetDir+"/passages/"+passage.Slug, aceOptions(viewsChanged), locals)
 	if err != nil {
 		return true, err
 	}
