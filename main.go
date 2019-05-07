@@ -449,7 +449,7 @@ func build(c *modulr.Context) error {
 
 	{
 		c.AddJob("reading", func() (bool, error) {
-			return renderReading(c, db)
+			return c.AllowError(renderReading(c, db)), nil
 		})
 	}
 
@@ -469,7 +469,7 @@ func build(c *modulr.Context) error {
 
 	{
 		c.AddJob("runs", func() (bool, error) {
-			return renderRuns(c, db)
+			return c.AllowError(renderRuns(c, db)), nil
 		})
 	}
 
@@ -566,7 +566,7 @@ func build(c *modulr.Context) error {
 
 	{
 		c.AddJob("twitter", func() (bool, error) {
-			return renderTwitter(c, db)
+			return c.AllowError(renderTwitter(c, db)), nil
 		})
 	}
 
@@ -579,6 +579,7 @@ func build(c *modulr.Context) error {
 	//
 
 	if !c.Wait() {
+		c.Log.Errorf("Cancelling next phase due to build errors")
 		return nil
 	}
 
