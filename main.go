@@ -1209,7 +1209,7 @@ func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, err
 		return false, err
 	}
 
-	changed := c.ChangedAny(sources)
+	changed := c.ChangedAny(sources...)
 	if !changed && !c.Forced() {
 		return false, nil
 	}
@@ -1228,7 +1228,7 @@ func compileStylesheets(c *modulr.Context, versionedAssetsDir string) (bool, err
 		return false, err
 	}
 
-	changed := c.ChangedAny(sources)
+	changed := c.ChangedAny(sources...)
 	if !changed && !c.Forced() {
 		return false, nil
 	}
@@ -1896,12 +1896,11 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
-			MainLayout,
-			ViewsDir + "/articles/show",
+			MainLayout + ".ace",
+			ViewsDir + "/articles/show.ace",
 		},
 		partialViews...,
-	))
-	//fmt.Printf("viewsChanged = %v\n", viewsChanged)
+	)...)
 	if !sourceChanged && !viewsChanged && !c.Forced() {
 		return false, nil
 	}
