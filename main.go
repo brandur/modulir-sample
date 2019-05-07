@@ -206,7 +206,7 @@ func build(c *modulr.Context) error {
 	{
 		partialViews = nil
 
-		sources, err := mfile.ReadDirAll(c, c.SourceDir+"/views")
+		sources, err := mfile.ReadDirWithMeta(c, c.SourceDir+"/views")
 		if err != nil {
 			return err
 		}
