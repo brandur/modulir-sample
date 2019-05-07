@@ -120,6 +120,7 @@ var (
 	articles  []*Article
 	fragments []*Fragment
 	passages  []*Passage
+	pages     map[string]*Page
 	photos    []*Photo
 	sequences map[string][]*Photo
 )
@@ -359,32 +360,28 @@ func build(c *modulr.Context) error {
 	}
 
 	//
-	// Pages
+	// Pages (read `_meta.yaml`)
 	//
 
+	var pagesChanged bool
+
 	{
-		// Note that we must always force loading of context for `_meta.yaml`
-		// so that it's available if any individual page needs it.
-		var meta map[string]*Page
-		metaChanged, err := myaml.ParseFile(
-			c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &meta)
-		if err != nil {
-			return err
-		}
+		c.AddJob("pages _meta.yaml", func() (bool, error) {
+			source := c.SourceDir + "/pages/_meta.yaml"
 
-		sources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
-		if err != nil {
-			return err
-		}
+			if !c.Changed(source) && !c.Forced() {
+				return false, nil
+			}
 
-		for _, s := range sources {
-			source := s
+			err := myaml.ParseFile(
+				c, c.SourceDir+"/pages/_meta.yaml", &pages)
+			if err != nil {
+				return true, err
+			}
 
-			name := fmt.Sprintf("page: %s", filepath.Base(source))
-			c.AddJob(name, func() (bool, error) {
-				return renderPage(c, source, meta, metaChanged)
-			})
-		}
+			pagesChanged = true
+			return true, nil
+		})
 	}
 
 	//
@@ -433,15 +430,14 @@ func build(c *modulr.Context) error {
 				return false, nil
 			}
 
-			var err error
 			var photosWrapper PhotoWrapper
-
-			photosChanged, err = myaml.ParseFile(c.ForcedContext(), source, &photosWrapper)
+			err := myaml.ParseFile(c, source, &photosWrapper)
 			if err != nil {
 				return true, err
 			}
 
 			photos = photosWrapper.Photos
+			photosChanged = true
 			return true, nil
 		})
 	}
@@ -507,19 +503,16 @@ func build(c *modulr.Context) error {
 					return false, nil
 				}
 
-				var err error
-				var photosWrapper PhotoWrapper
-
 				slug := path.Base(sequencePath)
 
-				// Always force this job so that we can get an accurate job count
-				// when it comes to resizing photos below.
-				sequencesChanged[slug], err = myaml.ParseFile(c.ForcedContext(), source, &photosWrapper)
+				var photosWrapper PhotoWrapper
+				err = myaml.ParseFile(c, source, &photosWrapper)
 				if err != nil {
 					return true, err
 				}
 
 				sequences[slug] = photosWrapper.Photos
+				sequencesChanged[slug] = true
 				return true, nil
 			})
 		}
@@ -677,6 +670,26 @@ func build(c *modulr.Context) error {
 
 			return renderHome(c, articles, fragments, photos)
 		})
+	}
+
+	//
+	// Pages (render each view)
+	//
+
+	{
+		sources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
+		if err != nil {
+			return err
+		}
+
+		for _, s := range sources {
+			source := s
+
+			name := fmt.Sprintf("page: %s", filepath.Base(source))
+			c.AddJob(name, func() (bool, error) {
+				return renderPage(c, source, pages, pagesChanged)
+			})
+		}
 	}
 
 	//
