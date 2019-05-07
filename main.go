@@ -1220,15 +1220,14 @@ func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, err
 		return false, err
 	}
 
-	changed := c.ChangedAny(sources...)
-	if !changed && !c.Forced() {
+	sourcesChanged := c.ChangedAny(sources...)
+	if !sourcesChanged && !c.Forced() {
 		return false, nil
 	}
 
-	err = assets.CompileJavascripts(
+	return true, assets.CompileJavascripts(
 		sourceDir,
 		versionedAssetsDir+"/app.js")
-	return true, err
 }
 
 func compileStylesheets(c *modulr.Context, versionedAssetsDir string) (bool, error) {
@@ -1239,15 +1238,14 @@ func compileStylesheets(c *modulr.Context, versionedAssetsDir string) (bool, err
 		return false, err
 	}
 
-	changed := c.ChangedAny(sources...)
-	if !changed && !c.Forced() {
+	sourcesChanged := c.ChangedAny(sources...)
+	if !sourcesChanged && !c.Forced() {
 		return false, nil
 	}
 
-	err = assets.CompileStylesheets(
+	return true, assets.CompileStylesheets(
 		sourceDir,
 		versionedAssetsDir+"/app.css")
-	return true, err
 }
 
 // extractSlug gets a slug for the given filename by using its basename
@@ -2352,7 +2350,14 @@ func renderReading(c *modulr.Context, db *sql.DB) (bool, error) {
 		return false, nil
 	}
 
-	if !c.FirstRun && !c.Forced() {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/reading/index.ace",
+		},
+		partialViews...,
+	)...)
+	if !c.FirstRun && !viewsChanged && !c.Forced() {
 		return false, nil
 	}
 
@@ -2387,13 +2392,8 @@ func renderReading(c *modulr.Context, db *sql.DB) (bool, error) {
 		"PagesByYearYCounts": pagesByYearYCounts,
 	})
 
-	_, err = mace.Render2(c, MainLayout, ViewsDir+"/reading/index",
-		c.TargetDir+"/reading/index.html", aceOptions(true), locals)
-	if err != nil {
-		return true, err
-	}
-
-	return true, nil
+	return true, mace.Render(c, MainLayout, ViewsDir+"/reading/index.ace",
+		c.TargetDir+"/reading/index.html", aceOptions(viewsChanged), locals)
 }
 
 func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
@@ -2448,7 +2448,14 @@ func renderRuns(c *modulr.Context, db *sql.DB) (bool, error) {
 		return false, nil
 	}
 
-	if !c.FirstRun && !c.Forced() {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/runs/index.ace",
+		},
+		partialViews...,
+	)...)
+	if !c.FirstRun && !viewsChanged && !c.Forced() {
 		return false, nil
 	}
 
@@ -2479,13 +2486,8 @@ func renderRuns(c *modulr.Context, db *sql.DB) (bool, error) {
 		"ByYearYDistances": byYearYDistances,
 	})
 
-	_, err = mace.Render2(c, MainLayout, ViewsDir+"/runs/index",
-		c.TargetDir+"/runs/index.html", aceOptions(true), locals)
-	if err != nil {
-		return true, err
-	}
-
-	return true, nil
+	return true, mace.Render(c, MainLayout, ViewsDir+"/runs/index.ace",
+		c.TargetDir+"/runs/index.html", aceOptions(viewsChanged), locals)
 }
 
 func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool, error) {
