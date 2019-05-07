@@ -128,6 +128,12 @@ var (
 // very many places and can probably be refactored as a local if desired.
 var conf Conf
 
+// List of partial views. If any of these changes we rebuild pretty much
+// anything. Even though some of those changes will false positives, they're
+// used pervasively enough and change infrequently enough that it's worth the
+// tradeoff. This is a global because so many render functions access it.
+var partialViews []string
+
 var renderComplexMarkdown func(string, *markdown.RenderOptions) string
 
 //////////////////////////////////////////////////////////////////////////////
@@ -168,9 +174,11 @@ func build(c *modulr.Context) error {
 
 	c.Log.Debugf("Running build loop")
 
-	err := envdecode.Decode(&conf)
-	if err != nil {
-		return err
+	{
+		err := envdecode.Decode(&conf)
+		if err != nil {
+			return err
+		}
 	}
 
 	// This is where we stored "versioned" assets like compiled JS and CSS.
@@ -179,14 +187,33 @@ func build(c *modulr.Context) error {
 	versionedAssetsDir := path.Join(c.TargetDir, "assets", Release)
 
 	var db *sql.DB
-	if conf.BlackSwanDatabaseURL != "" {
-		var err error
-		db, err = sql.Open("postgres", conf.BlackSwanDatabaseURL)
+
+	{
+		if conf.BlackSwanDatabaseURL != "" {
+			var err error
+			db, err = sql.Open("postgres", conf.BlackSwanDatabaseURL)
+			if err != nil {
+				return err
+			}
+		} else {
+			c.Log.Infof("No database set; will not render database-backed views")
+		}
+	}
+
+	// Generate a list of partial views.
+	{
+		partialViews = nil
+
+		sources, err := mfile.ReadDirAll(c, c.SourceDir+"/views")
 		if err != nil {
 			return err
 		}
-	} else {
-		c.Log.Infof("No database set; will not render database-backed views")
+
+		for _, source := range sources {
+			if strings.HasPrefix(filepath.Base(source), "_") {
+				partialViews = append(partialViews, source)
+			}
+		}
 	}
 
 	//
@@ -213,22 +240,24 @@ func build(c *modulr.Context) error {
 	// their existence.
 	//
 
-	commonDirs := []string{
-		c.TargetDir,
-		c.TargetDir + "/articles",
-		c.TargetDir + "/fragments",
-		c.TargetDir + "/passages",
-		c.TargetDir + "/photos",
-		c.TargetDir + "/reading",
-		c.TargetDir + "/runs",
-		c.TargetDir + "/twitter",
-		TempDir,
-		versionedAssetsDir,
-	}
-	for _, dir := range commonDirs {
-		err = mfile.EnsureDir(c, dir)
-		if err != nil {
-			return nil
+	{
+		commonDirs := []string{
+			c.TargetDir,
+			c.TargetDir + "/articles",
+			c.TargetDir + "/fragments",
+			c.TargetDir + "/passages",
+			c.TargetDir + "/photos",
+			c.TargetDir + "/reading",
+			c.TargetDir + "/runs",
+			c.TargetDir + "/twitter",
+			TempDir,
+			versionedAssetsDir,
+		}
+		for _, dir := range commonDirs {
+			err := mfile.EnsureDir(c, dir)
+			if err != nil {
+				return nil
+			}
 		}
 	}
 
@@ -236,20 +265,22 @@ func build(c *modulr.Context) error {
 	// Symlinks
 	//
 
-	commonSymlinks := [][2]string{
-		{c.SourceDir + "/content/fonts", c.TargetDir + "/fonts"},
-		{c.SourceDir + "/content/images", c.TargetDir + "/assets/images"},
+	{
+		commonSymlinks := [][2]string{
+			{c.SourceDir + "/content/fonts", c.TargetDir + "/fonts"},
+			{c.SourceDir + "/content/images", c.TargetDir + "/assets/images"},
 
-		// For backwards compatibility as many emails with this style of path
-		// have already gone out.
-		{c.SourceDir + "/content/images/passages", c.TargetDir + "/assets/passages"},
+			// For backwards compatibility as many emails with this style of path
+			// have already gone out.
+			{c.SourceDir + "/content/images/passages", c.TargetDir + "/assets/passages"},
 
-		{c.SourceDir + "/content/photographs", c.TargetDir + "/photographs"},
-	}
-	for _, link := range commonSymlinks {
-		err := mfile.EnsureSymlink(c, link[0], link[1])
-		if err != nil {
-			return nil
+			{c.SourceDir + "/content/photographs", c.TargetDir + "/photographs"},
+		}
+		for _, link := range commonSymlinks {
+			err := mfile.EnsureSymlink(c, link[0], link[1])
+			if err != nil {
+				return nil
+			}
 		}
 	}
 
@@ -1862,14 +1893,23 @@ func pathAsImage(extensionlessPath string) (string, bool) {
 }
 
 func renderArticle(c *modulr.Context, source string, articles []*Article, articlesChanged *bool, mu *sync.Mutex) (bool, error) {
-	var article Article
-	data, changed, err := myaml.ParseFileFrontmatter(c, source, &article)
-	if err != nil {
-		return true, err
+	sourceChanged := c.Changed(source)
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/articles/show",
+		},
+		partialViews...,
+	))
+	//fmt.Printf("viewsChanged = %v\n", viewsChanged)
+	if !sourceChanged && !viewsChanged && !c.Forced() {
+		return false, nil
 	}
 
-	if !changed && !c.Forced() {
-		return false, nil
+	var article Article
+	data, err := myaml.ParseFileFrontmatter(c, source, &article)
+	if err != nil {
+		return true, err
 	}
 
 	err = article.validate(source)
@@ -2003,7 +2043,7 @@ func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag) (bool,
 
 func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fragmentsChanged *bool, mu *sync.Mutex) (bool, error) {
 	var fragment Fragment
-	data, changed, err := myaml.ParseFileFrontmatter(c, source, &fragment)
+	data, changed, err := myaml.ParseFileFrontmatter2(c, source, &fragment)
 	if err != nil {
 		return true, err
 	}
@@ -2116,7 +2156,7 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment) (bool, error
 
 func renderPassage(c *modulr.Context, source string, passages []*Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
 	var passage Passage
-	data, changed, err := myaml.ParseFileFrontmatter(c, source, &passage)
+	data, changed, err := myaml.ParseFileFrontmatter2(c, source, &passage)
 	if err != nil {
 		return true, err
 	}
