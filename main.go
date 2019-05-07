@@ -1178,10 +1178,6 @@ func aceOptions(dynamicReload bool) *ace.Options {
 	return options
 }
 
-func boolPointer(v bool) *bool {
-	return &v
-}
-
 func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, error) {
 	sourceDir := c.SourceDir + "/content/javascripts"
 
@@ -1963,7 +1959,7 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 
 	mu.Lock()
 	insertOrReplaceArticle(articles, &article)
-	articlesChanged = boolPointer(true)
+	*articlesChanged = true
 	mu.Unlock()
 
 	return true, nil
@@ -2108,7 +2104,7 @@ func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fra
 
 	mu.Lock()
 	insertOrReplaceFragment(fragments, &fragment)
-	fragmentsChanged = boolPointer(true)
+	*fragmentsChanged = true
 	mu.Unlock()
 
 	return true, nil
@@ -2242,7 +2238,7 @@ func renderPassage(c *modulr.Context, source string, passages []*Passage, passag
 
 	mu.Lock()
 	insertOrReplacePassage(passages, &passage)
-	passagesChanged = boolPointer(true)
+	*passagesChanged = true
 	mu.Unlock()
 
 	return true, nil
@@ -2581,7 +2577,7 @@ func renderTalk(c *modulr.Context, source string, talks []*t.Talk, talksChanged 
 
 	mu.Lock()
 	insertOrReplaceTalk(talks, talk)
-	talksChanged = boolPointer(true)
+	*talksChanged = true
 	mu.Unlock()
 
 	return true, nil
