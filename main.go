@@ -123,6 +123,7 @@ var (
 	pages     map[string]*Page
 	photos    []*Photo
 	sequences map[string][]*Photo
+	talks     []*t.Talk
 )
 
 // Left as a global for now for the sake of convenience, but it's not used in
@@ -532,7 +533,8 @@ func build(c *modulr.Context) error {
 	// Talks
 	//
 
-	var talks []*t.Talk
+	var talksChanged bool
+	var talksMu sync.Mutex
 
 	{
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/content/talks")
@@ -553,13 +555,7 @@ func build(c *modulr.Context) error {
 
 			name := fmt.Sprintf("talk: %s", filepath.Base(source))
 			c.AddJob(name, func() (bool, error) {
-				talk, executed, err := renderTalk(c, source)
-				if !executed || err != nil {
-					return executed, err
-				}
-
-				talks = append(talks, talk)
-				return true, nil
+				return renderTalk(c, source, talks, &talksChanged, &talksMu)
 			})
 		}
 	}
@@ -1888,6 +1884,17 @@ func insertOrReplacePassage(passages []*Passage, passage *Passage) {
 	passages = append(passages, passage)
 }
 
+func insertOrReplaceTalk(talks []*t.Talk, talk *t.Talk) {
+	for i, t := range talks {
+		if talk.Slug == t.Slug {
+			talks[i] = talk
+			return
+		}
+	}
+
+	talks = append(talks, talk)
+}
+
 // isDraft does really simplistic detection on whether the given source is a
 // draft by looking whether the name "drafts" is in its parent directory's
 // name.
@@ -2507,17 +2514,24 @@ func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool,
 	return true, err
 }
 
-func renderTalk(c *modulr.Context, source string) (*t.Talk, bool, error) {
-	changed := c.Changed(source)
-	if !changed && !c.Forced() {
-		return nil, false, nil
+func renderTalk(c *modulr.Context, source string, talks []*t.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
+	sourceChanged := c.Changed(source)
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/talks/show.ace",
+		},
+		partialViews...,
+	)...)
+	if !sourceChanged && !viewsChanged && !c.Forced() {
+		return false, nil
 	}
 
 	// TODO: modulr-ize this package
 	talk, err := t.Render(
 		c.SourceDir+"/content", filepath.Dir(source), filepath.Base(source))
 	if err != nil {
-		return nil, true, err
+		return true, err
 	}
 
 	locals := getLocals(talk.Title, map[string]interface{}{
@@ -2526,13 +2540,18 @@ func renderTalk(c *modulr.Context, source string) (*t.Talk, bool, error) {
 		"Talk":           talk,
 	})
 
-	_, err = mace.Render2(c, MainLayout, ViewsDir+"/talks/show",
-		path.Join(c.TargetDir, talk.Slug), aceOptions(true), locals)
+	err = mace.Render(c, MainLayout, ViewsDir+"/talks/show.ace",
+		path.Join(c.TargetDir, talk.Slug), aceOptions(viewsChanged), locals)
 	if err != nil {
-		return talk, true, err
+		return true, err
 	}
 
-	return talk, true, nil
+	mu.Lock()
+	insertOrReplaceTalk(talks, talk)
+	talksChanged = boolPointer(true)
+	mu.Unlock()
+
+	return true, nil
 }
 
 func renderTwitter(c *modulr.Context, db *sql.DB) (bool, error) {
