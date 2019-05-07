@@ -366,18 +366,10 @@ func build(c *modulr.Context) error {
 		// Note that we must always force loading of context for `_meta.yaml`
 		// so that it's available if any individual page needs it.
 		var meta map[string]*Page
-		pagesMetaChanged, err := myaml.ParseFile(
+		metaChanged, err := myaml.ParseFile(
 			c.ForcedContext(), c.SourceDir+"/pages/_meta.yaml", &meta)
 		if err != nil {
 			return err
-		}
-
-		// If the master metadata file changed, then any page could potentially
-		// have changed, so we'll have to re-render all of them: pass a forced
-		// context into each page job.
-		pageContext := c
-		if pagesMetaChanged {
-			pageContext = c.ForcedContext()
 		}
 
 		sources, err := mfile.ReadDir(c, c.SourceDir+"/pages")
@@ -390,7 +382,7 @@ func build(c *modulr.Context) error {
 
 			name := fmt.Sprintf("page: %s", filepath.Base(source))
 			c.AddJob(name, func() (bool, error) {
-				return renderPage(pageContext, meta, source)
+				return renderPage(c, source, meta, metaChanged)
 			})
 		}
 	}
@@ -2277,16 +2269,25 @@ func renderHome(c *modulr.Context, articles []*Article, fragments []*Fragment, p
 	return true, nil
 }
 
-func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (bool, error) {
-	// Strip the `.ace` extension. Ace adds its own when rendering, and we
-	// don't want it on the output files.
-	source = strings.TrimSuffix(source, path.Ext(source))
+func renderPage(c *modulr.Context, source string, meta map[string]*Page, metaChanged bool) (bool, error) {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			source,
+		},
+		partialViews...,
+	)...)
+	if !metaChanged && !viewsChanged && !c.Forced() {
+		return false, nil
+	}
 
-	// Remove the "./pages" directory, but keep the rest of the path.
+	// Remove the "./pages" directory and extension, but keep the rest of the
+	// path.
 	//
-	// Looks something like "about".
+	// Looks something like "about", or "nested/about".
 	pagePath := strings.TrimPrefix(mfile.MustAbs(source),
 		mfile.MustAbs("./pages")+"/")
+	pagePath = strings.TrimSuffix(pagePath, path.Ext(pagePath))
 
 	// Looks something like "./public/about".
 	target := path.Join(c.TargetDir, pagePath)
@@ -2303,11 +2304,11 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 		"Title":     "Untitled Page",
 	}
 
-	meta, ok := pagesMeta[pagePath]
+	pageMeta, ok := meta[pagePath]
 	if ok {
 		locals = map[string]interface{}{
-			"BodyClass": meta.BodyClass,
-			"Title":     meta.Title,
+			"BodyClass": pageMeta.BodyClass,
+			"Title":     pageMeta.Title,
 		}
 	} else {
 		c.Log.Errorf("No page meta information: %v", pagePath)
@@ -2320,13 +2321,9 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 		return true, err
 	}
 
-	changed, err := mace.Render2(c, MainLayout, source, target, aceOptions(true), locals)
-	executed := changed || c.Forced()
-	if err != nil {
-		return executed, err
-	}
-
-	return executed, nil
+	err = mace.Render(c, MainLayout, source, target,
+		aceOptions(viewsChanged), locals)
+	return true, nil
 }
 
 func renderReading(c *modulr.Context, db *sql.DB) (bool, error) {
