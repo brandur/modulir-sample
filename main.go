@@ -598,11 +598,7 @@ func build(c *modulr.Context) error {
 	// Index
 	{
 		c.AddJob("articles index", func() (bool, error) {
-			if !articlesChanged {
-				return false, nil
-			}
-
-			return renderArticlesIndex(c, articles)
+			return renderArticlesIndex(c, articles, articlesChanged)
 		})
 	}
 
@@ -1995,20 +1991,26 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 	return true, nil
 }
 
-func renderArticlesIndex(c *modulr.Context, articles []*Article) (bool, error) {
+func renderArticlesIndex(c *modulr.Context, articles []*Article, articlesChanged bool) (bool, error) {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/articles/index.ace",
+		},
+		partialViews...,
+	)...)
+	if !articlesChanged && !viewsChanged && !c.Forced() {
+		return false, nil
+	}
+
 	articlesByYear := groupArticlesByYear(articles)
 
 	locals := getLocals("Articles", map[string]interface{}{
 		"ArticlesByYear": articlesByYear,
 	})
 
-	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/articles/index",
-		c.TargetDir+"/articles/index.html", aceOptions(true), locals)
-	if err != nil {
-		return true, err
-	}
-
-	return true, nil
+	return true, mace.Render(c, MainLayout, ViewsDir+"/articles/index.ace",
+		c.TargetDir+"/articles/index.html", aceOptions(viewsChanged), locals)
 }
 
 func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag) (bool, error) {
