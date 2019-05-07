@@ -73,7 +73,7 @@ const (
 	LayoutsDir = "./layouts"
 
 	// MainLayout is the site's main layout.
-	MainLayout = LayoutsDir + "/main"
+	MainLayout = LayoutsDir + "/main.ace"
 
 	// PassageLayout is the layout for a Passages & Glass issue (an email
 	// newsletter).
@@ -1193,8 +1193,14 @@ type twitterCard struct {
 //
 //////////////////////////////////////////////////////////////////////////////
 
-func aceOptions() *ace.Options {
-	return &ace.Options{FuncMap: templatehelpers.FuncMap}
+func aceOptions(dynamicReload bool) *ace.Options {
+	options := &ace.Options{FuncMap: templatehelpers.FuncMap}
+
+	if dynamicReload {
+		options.DynamicReload = true
+	}
+
+	return options
 }
 
 func boolPointer(v bool) *bool {
@@ -1237,6 +1243,12 @@ func compileStylesheets(c *modulr.Context, versionedAssetsDir string) (bool, err
 		sourceDir,
 		versionedAssetsDir+"/app.css")
 	return true, err
+}
+
+// extractSlug gets a slug for the given filename by using its basename
+// stripped of file extension.
+func extractSlug(source string) string {
+	return strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
 }
 
 func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, error) {
@@ -1873,6 +1885,13 @@ func insertOrReplacePassage(passages []*Passage, passage *Passage) {
 	passages = append(passages, passage)
 }
 
+// isDraft does really simplistic detection on whether the given source is a
+// draft by looking whether the name "drafts" is in its parent directory's
+// name.
+func isDraft(source string) bool {
+	return strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
+}
+
 // Checks if the path exists as a common image format (.jpg or .png only). If
 // so, returns the discovered extension (e.g. "jpg") and boolean true.
 // Otherwise returns an empty string and boolean false.
@@ -1896,7 +1915,7 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
-			MainLayout + ".ace",
+			MainLayout,
 			ViewsDir + "/articles/show.ace",
 		},
 		partialViews...,
@@ -1916,8 +1935,8 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 		return true, err
 	}
 
-	article.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
-	article.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
+	article.Draft = isDraft(source)
+	article.Slug = extractSlug(source)
 
 	article.Content = renderComplexMarkdown(string(data), nil)
 
@@ -1952,8 +1971,8 @@ func renderArticle(c *modulr.Context, source string, articles []*Article, articl
 
 	// Always use force context because if we made it to here we know that our
 	// sources have changed.
-	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/show",
-		path.Join(c.TargetDir, article.Slug), aceOptions(), locals)
+	err = mace.Render(c, MainLayout, ViewsDir+"/articles/show.ace",
+		path.Join(c.TargetDir, article.Slug), aceOptions(viewsChanged), locals)
 	if err != nil {
 		return true, err
 	}
@@ -1973,8 +1992,8 @@ func renderArticlesIndex(c *modulr.Context, articles []*Article) (bool, error) {
 		"ArticlesByYear": articlesByYear,
 	})
 
-	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/articles/index",
-		c.TargetDir+"/articles/index.html", aceOptions(), locals)
+	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/articles/index",
+		c.TargetDir+"/articles/index.html", aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2056,8 +2075,8 @@ func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fra
 		return true, err
 	}
 
-	fragment.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
-	fragment.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
+	fragment.Draft = isDraft(source)
+	fragment.Slug = extractSlug(source)
 
 	fragment.Content = renderComplexMarkdown(string(data), nil)
 
@@ -2080,8 +2099,8 @@ func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fra
 
 	// Always use force context because if we made it to here we know that our
 	// sources have changed.
-	_, err = mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/show",
-		path.Join(c.TargetDir, "fragments", fragment.Slug), aceOptions(), locals)
+	_, err = mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/show",
+		path.Join(c.TargetDir, "fragments", fragment.Slug), aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2144,8 +2163,8 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment) (bool, error
 		"FragmentsByYear": fragmentsByYear,
 	})
 
-	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/index",
-		c.TargetDir+"/fragments/index.html", aceOptions(), locals)
+	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/index",
+		c.TargetDir+"/fragments/index.html", aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2170,8 +2189,8 @@ func renderPassage(c *modulr.Context, source string, passages []*Passage, passag
 	}
 
 	passage.ContentRaw = string(data)
-	passage.Draft = strings.Contains(filepath.Base(filepath.Dir(source)), "drafts")
-	passage.Slug = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
+	passage.Draft = isDraft(source)
+	passage.Slug = extractSlug(source)
 
 	slugParts := strings.Split(passage.Slug, "-")
 	if len(slugParts) < 2 {
@@ -2194,8 +2213,8 @@ func renderPassage(c *modulr.Context, source string, passages []*Passage, passag
 		"Passage": passage,
 	})
 
-	_, err = mace.Render(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/show",
-		c.TargetDir+"/passages/"+passage.Slug, aceOptions(), locals)
+	_, err = mace.Render2(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/show",
+		c.TargetDir+"/passages/"+passage.Slug, aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2213,8 +2232,8 @@ func renderPassagesIndex(c *modulr.Context, passages []*Passage) (bool, error) {
 		"Passages": passages,
 	})
 
-	_, err := mace.Render(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/index",
-		c.TargetDir+"/passages/index.html", aceOptions(), locals)
+	_, err := mace.Render2(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/index",
+		c.TargetDir+"/passages/index.html", aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2242,8 +2261,8 @@ func renderHome(c *modulr.Context, articles []*Article, fragments []*Fragment, p
 		"Photo":     photo,
 	})
 
-	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/index",
-		c.TargetDir+"/index.html", aceOptions(), locals)
+	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/index",
+		c.TargetDir+"/index.html", aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2294,7 +2313,7 @@ func renderPage(c *modulr.Context, pagesMeta map[string]*Page, source string) (b
 		return true, err
 	}
 
-	changed, err := mace.Render(c, MainLayout, source, target, aceOptions(), locals)
+	changed, err := mace.Render2(c, MainLayout, source, target, aceOptions(true), locals)
 	executed := changed || c.Forced()
 	if err != nil {
 		return executed, err
@@ -2343,8 +2362,8 @@ func renderReading(c *modulr.Context, db *sql.DB) (bool, error) {
 		"PagesByYearYCounts": pagesByYearYCounts,
 	})
 
-	_, err = mace.Render(c, MainLayout, ViewsDir+"/reading/index",
-		c.TargetDir+"/reading/index.html", aceOptions(), locals)
+	_, err = mace.Render2(c, MainLayout, ViewsDir+"/reading/index",
+		c.TargetDir+"/reading/index.html", aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2361,8 +2380,8 @@ func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
 
 	// If we called in here then `photos` has changed, so make sure to force a
 	// render.
-	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
-		c.TargetDir+"/photos/index.html", aceOptions(), locals)
+	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
+		c.TargetDir+"/photos/index.html", aceOptions(true), locals)
 	return true, err
 }
 
@@ -2435,8 +2454,8 @@ func renderRuns(c *modulr.Context, db *sql.DB) (bool, error) {
 		"ByYearYDistances": byYearYDistances,
 	})
 
-	_, err = mace.Render(c, MainLayout, ViewsDir+"/runs/index",
-		c.TargetDir+"/runs/index.html", aceOptions(), locals)
+	_, err = mace.Render2(c, MainLayout, ViewsDir+"/runs/index",
+		c.TargetDir+"/runs/index.html", aceOptions(true), locals)
 	if err != nil {
 		return true, err
 	}
@@ -2456,8 +2475,8 @@ func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool,
 		"ViewportWidth": 600,
 	})
 
-	_, err := mace.Render(c.ForcedContext(), MainLayout, ViewsDir+"/sequences/photo",
-		path.Join(c.TargetDir, "sequences", sequenceName, photo.Slug), aceOptions(), locals)
+	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/sequences/photo",
+		path.Join(c.TargetDir, "sequences", sequenceName, photo.Slug), aceOptions(true), locals)
 	return true, err
 }
 
@@ -2480,8 +2499,8 @@ func renderTalk(c *modulr.Context, source string) (*t.Talk, bool, error) {
 		"Talk":           talk,
 	})
 
-	_, err = mace.Render(c, MainLayout, ViewsDir+"/talks/show",
-		path.Join(c.TargetDir, talk.Slug), aceOptions(), locals)
+	_, err = mace.Render2(c, MainLayout, ViewsDir+"/talks/show",
+		path.Join(c.TargetDir, talk.Slug), aceOptions(true), locals)
 	if err != nil {
 		return talk, true, err
 	}
@@ -2538,8 +2557,8 @@ func renderTwitter(c *modulr.Context, db *sql.DB) (bool, error) {
 			"TweetCountYCounts": tweetCountYCounts,
 		})
 
-		_, err = mace.Render(c, MainLayout, ViewsDir+"/twitter/index",
-			c.TargetDir+"/twitter/"+page, aceOptions(), locals)
+		_, err = mace.Render2(c, MainLayout, ViewsDir+"/twitter/index",
+			c.TargetDir+"/twitter/"+page, aceOptions(true), locals)
 		if err != nil {
 			return true, err
 		}
