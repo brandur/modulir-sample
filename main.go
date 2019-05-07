@@ -2060,14 +2060,22 @@ func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag) (bool,
 }
 
 func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fragmentsChanged *bool, mu *sync.Mutex) (bool, error) {
-	var fragment Fragment
-	data, changed, err := myaml.ParseFileFrontmatter2(c, source, &fragment)
-	if err != nil {
-		return true, err
+	sourceChanged := c.Changed(source)
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/fragments/show.ace",
+		},
+		partialViews...,
+	)...)
+	if !sourceChanged && !viewsChanged && !c.Forced() {
+		return false, nil
 	}
 
-	if !changed && !c.Forced() {
-		return false, nil
+	var fragment Fragment
+	data, err := myaml.ParseFileFrontmatter(c, source, &fragment)
+	if err != nil {
+		return true, err
 	}
 
 	err = fragment.validate(source)
@@ -2097,10 +2105,9 @@ func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fra
 		"TwitterCard":    card,
 	})
 
-	// Always use force context because if we made it to here we know that our
-	// sources have changed.
-	_, err = mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/show",
-		path.Join(c.TargetDir, "fragments", fragment.Slug), aceOptions(true), locals)
+	err = mace.Render(c, MainLayout, ViewsDir+"/fragments/show.ace",
+		path.Join(c.TargetDir, "fragments", fragment.Slug),
+		aceOptions(viewsChanged), locals)
 	if err != nil {
 		return true, err
 	}
