@@ -645,11 +645,8 @@ func build(c *modulr.Context) error {
 
 	{
 		c.AddJob("home", func() (bool, error) {
-			if !articlesChanged && !fragmentsChanged && !photosChanged {
-				return false, nil
-			}
-
-			return renderHome(c, articles, fragments, photos)
+			return renderHome(c, articles, fragments, photos,
+				articlesChanged, fragmentsChanged, photosChanged)
 		})
 	}
 
@@ -668,7 +665,8 @@ func build(c *modulr.Context) error {
 
 			name := fmt.Sprintf("page: %s", filepath.Base(source))
 			c.AddJob(name, func() (bool, error) {
-				return renderPage(c, source, pages, pagesChanged)
+				return renderPage(c, source, pages,
+					pagesChanged)
 			})
 		}
 	}
@@ -679,11 +677,8 @@ func build(c *modulr.Context) error {
 
 	{
 		c.AddJob("passages index", func() (bool, error) {
-			if !passagesChanged {
-				return false, nil
-			}
-
-			return renderPassagesIndex(c, passages)
+			return renderPassagesIndex(c, passages,
+				passagesChanged)
 		})
 	}
 
@@ -694,11 +689,8 @@ func build(c *modulr.Context) error {
 	// Photo index
 	{
 		c.AddJob("photos index", func() (bool, error) {
-			if !photosChanged {
-				return false, nil
-			}
-
-			return renderPhotoIndex(c, photos)
+			return renderPhotoIndex(c, photos,
+				photosChanged)
 		})
 	}
 
@@ -739,11 +731,8 @@ func build(c *modulr.Context) error {
 				// Sequence page
 				name := fmt.Sprintf("sequence %s: %s", slug, photo.Slug)
 				c.AddJob(name, func() (bool, error) {
-					if !sequencesChanged[slug] {
-						return false, nil
-					}
-
-					return renderSequence(c, slug, photo)
+					return renderSequence(c, slug, photo,
+						sequencesChanged[slug])
 				})
 
 				// Sequence fetch + resize
@@ -2259,21 +2248,42 @@ func renderPassage(c *modulr.Context, source string, passages []*Passage, passag
 	return true, nil
 }
 
-func renderPassagesIndex(c *modulr.Context, passages []*Passage) (bool, error) {
+func renderPassagesIndex(c *modulr.Context, passages []*Passage,
+	passagesChanged bool) (bool, error) {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			PassageLayout,
+			ViewsDir + "/passages/index.ace",
+		},
+		partialViews...,
+	)...)
+	if !passagesChanged && !viewsChanged && !c.Forced() {
+		return false, nil
+	}
+
 	locals := getLocals("Passages", map[string]interface{}{
 		"Passages": passages,
 	})
 
-	_, err := mace.Render2(c.ForcedContext(), PassageLayout, ViewsDir+"/passages/index",
-		c.TargetDir+"/passages/index.html", aceOptions(true), locals)
-	if err != nil {
-		return true, err
-	}
-
-	return true, nil
+	return true, mace.Render(c, PassageLayout, ViewsDir+"/passages/index.ace",
+		c.TargetDir+"/passages/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderHome(c *modulr.Context, articles []*Article, fragments []*Fragment, photos []*Photo) (bool, error) {
+func renderHome(c *modulr.Context,
+	articles []*Article, fragments []*Fragment, photos []*Photo,
+	articlesChanged, fragmentsChanged, photosChanged bool) (bool, error) {
+
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/index.ace",
+		},
+		partialViews...,
+	)...)
+	if !articlesChanged && !fragmentsChanged && !photosChanged && !viewsChanged && !c.Forced() {
+		return false, nil
+	}
+
 	if len(articles) > 3 {
 		articles = articles[0:3]
 	}
@@ -2293,13 +2303,8 @@ func renderHome(c *modulr.Context, articles []*Article, fragments []*Fragment, p
 		"Photo":     photo,
 	})
 
-	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/index",
-		c.TargetDir+"/index.html", aceOptions(true), locals)
-	if err != nil {
-		return true, err
-	}
-
-	return true, nil
+	return true, mace.Render(c, MainLayout, ViewsDir+"/index.ace",
+		c.TargetDir+"/index.html", aceOptions(viewsChanged), locals)
 }
 
 func renderPage(c *modulr.Context, source string, meta map[string]*Page, metaChanged bool) (bool, error) {
@@ -2410,18 +2415,27 @@ func renderReading(c *modulr.Context, db *sql.DB) (bool, error) {
 		c.TargetDir+"/reading/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderPhotoIndex(c *modulr.Context, photos []*Photo) (bool, error) {
+func renderPhotoIndex(c *modulr.Context, photos []*Photo,
+	photosChanged bool) (bool, error) {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/photos/index.ace",
+		},
+		partialViews...,
+	)...)
+	if !photosChanged && !viewsChanged && !c.Forced() {
+		return false, nil
+	}
+
 	locals := getLocals("Photos", map[string]interface{}{
 		"BodyClass":     "photos",
 		"Photos":        photos,
 		"ViewportWidth": 600,
 	})
 
-	// If we called in here then `photos` has changed, so make sure to force a
-	// render.
-	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/photos/index",
-		c.TargetDir+"/photos/index.html", aceOptions(true), locals)
-	return true, err
+	return true, mace.Render(c, MainLayout, ViewsDir+"/photos/index.ace",
+		c.TargetDir+"/photos/index.html", aceOptions(viewsChanged), locals)
 }
 
 func renderRobotsTxt(c *modulr.Context) (bool, error) {
@@ -2504,7 +2518,19 @@ func renderRuns(c *modulr.Context, db *sql.DB) (bool, error) {
 		c.TargetDir+"/runs/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool, error) {
+func renderSequence(c *modulr.Context, sequenceName string, photo *Photo,
+	sequenceChanged bool) (bool, error) {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/sequences/photo.ace",
+		},
+		partialViews...,
+	)...)
+	if !sequenceChanged && !viewsChanged && !c.Forced() {
+		return false, nil
+	}
+
 	title := fmt.Sprintf("%s — %s", photo.Title, sequenceName)
 	description := string(mmarkdown.Render(c, []byte(photo.Description)))
 
@@ -2516,9 +2542,9 @@ func renderSequence(c *modulr.Context, sequenceName string, photo *Photo) (bool,
 		"ViewportWidth": 600,
 	})
 
-	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/sequences/photo",
-		path.Join(c.TargetDir, "sequences", sequenceName, photo.Slug), aceOptions(true), locals)
-	return true, err
+	return true, mace.Render(c, MainLayout, ViewsDir+"/sequences/photo.ace",
+		path.Join(c.TargetDir, "sequences", sequenceName, photo.Slug),
+		aceOptions(viewsChanged), locals)
 }
 
 func renderTalk(c *modulr.Context, source string, talks []*t.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
