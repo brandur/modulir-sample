@@ -598,29 +598,24 @@ func build(c *modulr.Context) error {
 	// Index
 	{
 		c.AddJob("articles index", func() (bool, error) {
-			return renderArticlesIndex(c, articles, articlesChanged)
+			return renderArticlesIndex(c, articles,
+				articlesChanged)
 		})
 	}
 
 	// Feed (all)
 	{
 		c.AddJob("articles feed", func() (bool, error) {
-			if !articlesChanged {
-				return false, nil
-			}
-
-			return renderArticlesFeed(c, articles, nil)
+			return renderArticlesFeed(c, articles, nil,
+				articlesChanged)
 		})
 	}
 
 	// Feed (Postgres)
 	{
 		c.AddJob("articles feed (postgres)", func() (bool, error) {
-			if !articlesChanged {
-				return false, nil
-			}
-
-			return renderArticlesFeed(c, articles, tagPointer(tagPostgres))
+			return renderArticlesFeed(c, articles, tagPointer(tagPostgres),
+				articlesChanged)
 		})
 	}
 
@@ -631,22 +626,16 @@ func build(c *modulr.Context) error {
 	// Index
 	{
 		c.AddJob("fragments index", func() (bool, error) {
-			if !fragmentsChanged {
-				return false, nil
-			}
-
-			return renderFragmentsIndex(c, fragments)
+			return renderFragmentsIndex(c, fragments,
+				fragmentsChanged)
 		})
 	}
 
 	// Feed
 	{
 		c.AddJob("fragments feed", func() (bool, error) {
-			if !fragmentsChanged {
-				return false, nil
-			}
-
-			return renderFragmentsFeed(c, fragments)
+			return renderFragmentsFeed(c, fragments,
+				fragmentsChanged)
 		})
 	}
 
@@ -2013,7 +2002,11 @@ func renderArticlesIndex(c *modulr.Context, articles []*Article, articlesChanged
 		c.TargetDir+"/articles/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag) (bool, error) {
+func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag, articlesChanged bool) (bool, error) {
+	if !articlesChanged && !c.Forced() {
+		return false, nil
+	}
+
 	name := "articles"
 	if tag != nil {
 		name = fmt.Sprintf("articles-%s", *tag)
@@ -2132,7 +2125,12 @@ func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fra
 	return true, nil
 }
 
-func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment) (bool, error) {
+func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment,
+	fragmentsChanged bool) (bool, error) {
+	if !fragmentsChanged && !c.Forced() {
+		return false, nil
+	}
+
 	feed := &atom.Feed{
 		Title: "Fragments - brandur.org",
 		ID:    "tag:brandur.org.org,2013:/fragments",
@@ -2175,20 +2173,27 @@ func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment) (bool, error)
 	return true, feed.Encode(f, "  ")
 }
 
-func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment) (bool, error) {
+func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment,
+	fragmentsChanged bool) (bool, error) {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/fragments/show.ace",
+		},
+		partialViews...,
+	)...)
+	if !fragmentsChanged && !viewsChanged && !c.Forced() {
+		return false, nil
+	}
+
 	fragmentsByYear := groupFragmentsByYear(fragments)
 
 	locals := getLocals("Fragments", map[string]interface{}{
 		"FragmentsByYear": fragmentsByYear,
 	})
 
-	_, err := mace.Render2(c.ForcedContext(), MainLayout, ViewsDir+"/fragments/index",
-		c.TargetDir+"/fragments/index.html", aceOptions(true), locals)
-	if err != nil {
-		return true, err
-	}
-
-	return true, nil
+	return true, mace.Render(c, MainLayout, ViewsDir+"/fragments/index.ace",
+		c.TargetDir+"/fragments/index.html", aceOptions(viewsChanged), locals)
 }
 
 func renderPassage(c *modulr.Context, source string, passages []*Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
