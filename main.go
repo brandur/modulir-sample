@@ -2540,7 +2540,14 @@ func renderTwitter(c *modulr.Context, db *sql.DB) (bool, error) {
 		return false, nil
 	}
 
-	if !c.FirstRun && !c.Forced() {
+	viewsChanged := c.ChangedAny(append(
+		[]string{
+			MainLayout,
+			ViewsDir + "/twitter/index.ace",
+		},
+		partialViews...,
+	)...)
+	if !c.FirstRun && !viewsChanged && !c.Forced() {
 		return false, nil
 	}
 
@@ -2584,8 +2591,8 @@ func renderTwitter(c *modulr.Context, db *sql.DB) (bool, error) {
 			"TweetCountYCounts": tweetCountYCounts,
 		})
 
-		_, err = mace.Render2(c, MainLayout, ViewsDir+"/twitter/index",
-			c.TargetDir+"/twitter/"+page, aceOptions(true), locals)
+		err = mace.Render(c, MainLayout, ViewsDir+"/twitter/index.ace",
+			c.TargetDir+"/twitter/"+page, aceOptions(viewsChanged), locals)
 		if err != nil {
 			return true, err
 		}
