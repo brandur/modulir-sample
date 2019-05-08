@@ -26,8 +26,8 @@ import (
 	"github.com/brandur/sorg/assets"
 	"github.com/brandur/sorg/atom"
 	"github.com/brandur/sorg/markdown"
-	p "github.com/brandur/sorg/passages"
-	t "github.com/brandur/sorg/talks"
+	spassages "github.com/brandur/sorg/passages"
+	stalks "github.com/brandur/sorg/talks"
 	"github.com/brandur/sorg/templatehelpers"
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
@@ -99,11 +99,11 @@ const twitterInfo = `<p>Find me on Twitter at ` +
 var (
 	articles  []*Article
 	fragments []*Fragment
-	passages  []*p.Passage
+	passages  []*spassages.Passage
 	pages     map[string]*Page
 	photos    []*Photo
 	sequences map[string][]*Photo
-	talks     []*t.Talk
+	talks     []*stalks.Talk
 )
 
 // List of partial views. If any of these changes we rebuild pretty much
@@ -1718,7 +1718,7 @@ func insertOrReplaceFragment(fragments *[]*Fragment, fragment *Fragment) {
 	*fragments = append(*fragments, fragment)
 }
 
-func insertOrReplacePassage(passages *[]*p.Passage, passage *p.Passage) {
+func insertOrReplacePassage(passages *[]*spassages.Passage, passage *spassages.Passage) {
 	for i, p := range *passages {
 		if passage.Slug == p.Slug {
 			(*passages)[i] = passage
@@ -1729,7 +1729,7 @@ func insertOrReplacePassage(passages *[]*p.Passage, passage *p.Passage) {
 	*passages = append(*passages, passage)
 }
 
-func insertOrReplaceTalk(talks *[]*t.Talk, talk *t.Talk) {
+func insertOrReplaceTalk(talks *[]*stalks.Talk, talk *stalks.Talk) {
 	for i, t := range *talks {
 		if talk.Slug == t.Slug {
 			(*talks)[i] = talk
@@ -2056,7 +2056,7 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment,
 		c.TargetDir+"/fragments/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderPassage(c *modulr.Context, source string, passages *[]*p.Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderPassage(c *modulr.Context, source string, passages *[]*spassages.Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2070,7 +2070,7 @@ func renderPassage(c *modulr.Context, source string, passages *[]*p.Passage, pas
 	}
 
 	// TODO: modulr-ize this package
-	passage, err := p.Render(filepath.Dir(source), filepath.Base(source), false)
+	passage, err := spassages.Render(filepath.Dir(source), filepath.Base(source), false)
 	if err != nil {
 		return true, err
 	}
@@ -2094,7 +2094,7 @@ func renderPassage(c *modulr.Context, source string, passages *[]*p.Passage, pas
 	return true, nil
 }
 
-func renderPassagesIndex(c *modulr.Context, passages []*p.Passage,
+func renderPassagesIndex(c *modulr.Context, passages []*spassages.Passage,
 	passagesChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2393,7 +2393,7 @@ func renderSequence(c *modulr.Context, sequenceName string, photo *Photo,
 		aceOptions(viewsChanged), locals)
 }
 
-func renderTalk(c *modulr.Context, source string, talks *[]*t.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderTalk(c *modulr.Context, source string, talks *[]*stalks.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2407,7 +2407,7 @@ func renderTalk(c *modulr.Context, source string, talks *[]*t.Talk, talksChanged
 	}
 
 	// TODO: modulr-ize this package
-	talk, err := t.Render(
+	talk, err := stalks.Render(
 		c.SourceDir+"/content", filepath.Dir(source), filepath.Base(source))
 	if err != nil {
 		return true, err
@@ -2563,7 +2563,7 @@ func sortFragments(fragments []*Fragment) {
 	})
 }
 
-func sortPassages(passages []*p.Passage) {
+func sortPassages(passages []*spassages.Passage) {
 	sort.Slice(passages, func(i, j int) bool {
 		return passages[j].PublishedAt.Before(*passages[i].PublishedAt)
 	})
@@ -2575,7 +2575,7 @@ func sortPhotos(photos []*Photo) {
 	})
 }
 
-func sortTalks(talks []*t.Talk) {
+func sortTalks(talks []*stalks.Talk) {
 	sort.Slice(talks, func(i, j int) bool {
 		return talks[j].PublishedAt.Before(*talks[i].PublishedAt)
 	})
