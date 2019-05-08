@@ -47,6 +47,12 @@ import (
 //////////////////////////////////////////////////////////////////////////////
 
 func main() {
+	err := envdecode.Decode(&conf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error decoding conf from env: %v", err)
+		os.Exit(1)
+	}
+
 	config := &modulr.Config{
 		Log:  &log.Logger{Level: log.LevelInfo},
 		Port: "5004",
@@ -175,13 +181,6 @@ func build(c *modulr.Context) error {
 	//
 
 	c.Log.Debugf("Running build loop")
-
-	{
-		err := envdecode.Decode(&conf)
-		if err != nil {
-			return err
-		}
-	}
 
 	// This is where we stored "versioned" assets like compiled JS and CSS.
 	// These assets have a release number that we can increment and by
