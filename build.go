@@ -238,7 +238,7 @@ func build(c *modulr.Context) error {
 
 	{
 		commonSymlinks := [][2]string{
-			{c.SourceDir + "/content/fonts", c.TargetDir + "/fonts"},
+			{c.SourceDir + "/content/fonts", c.TargetDir + "/assets/fonts"},
 			{c.SourceDir + "/content/images", c.TargetDir + "/assets/images"},
 
 			// For backwards compatibility as many emails with this style of path
@@ -282,7 +282,7 @@ func build(c *modulr.Context) error {
 			name := fmt.Sprintf("article: %s", filepath.Base(source))
 			c.AddJob(name, func() (bool, error) {
 				return renderArticle(c, source,
-					articles, &articlesChanged, &articlesMu)
+					&articles, &articlesChanged, &articlesMu)
 			})
 		}
 	}
@@ -314,7 +314,7 @@ func build(c *modulr.Context) error {
 			name := fmt.Sprintf("fragment: %s", filepath.Base(source))
 			c.AddJob(name, func() (bool, error) {
 				return renderFragment(c, source,
-					fragments, &fragmentsChanged, &fragmentsMu)
+					&fragments, &fragmentsChanged, &fragmentsMu)
 			})
 		}
 	}
@@ -381,7 +381,7 @@ func build(c *modulr.Context) error {
 			name := fmt.Sprintf("passage: %s", filepath.Base(source))
 			c.AddJob(name, func() (bool, error) {
 				return renderPassage(c, source,
-					passages, &passagesChanged, &passagesMu)
+					&passages, &passagesChanged, &passagesMu)
 			})
 		}
 	}
@@ -524,7 +524,7 @@ func build(c *modulr.Context) error {
 
 			name := fmt.Sprintf("talk: %s", filepath.Base(source))
 			c.AddJob(name, func() (bool, error) {
-				return renderTalk(c, source, talks, &talksChanged, &talksMu)
+				return renderTalk(c, source, &talks, &talksChanged, &talksMu)
 			})
 		}
 	}
@@ -1738,48 +1738,48 @@ func groupTwitterByYearAndMonth(tweets []*Tweet) []*tweetYear {
 	return years
 }
 
-func insertOrReplaceArticle(articles []*Article, article *Article) {
-	for i, a := range articles {
+func insertOrReplaceArticle(articles *[]*Article, article *Article) {
+	for i, a := range *articles {
 		if article.Slug == a.Slug {
-			articles[i] = article
+			(*articles)[i] = article
 			return
 		}
 	}
 
-	articles = append(articles, article)
+	*articles = append(*articles, article)
 }
 
-func insertOrReplaceFragment(fragments []*Fragment, fragment *Fragment) {
-	for i, f := range fragments {
+func insertOrReplaceFragment(fragments *[]*Fragment, fragment *Fragment) {
+	for i, f := range *fragments {
 		if fragment.Slug == f.Slug {
-			fragments[i] = fragment
+			(*fragments)[i] = fragment
 			return
 		}
 	}
 
-	fragments = append(fragments, fragment)
+	*fragments = append(*fragments, fragment)
 }
 
-func insertOrReplacePassage(passages []*Passage, passage *Passage) {
-	for i, p := range passages {
+func insertOrReplacePassage(passages *[]*Passage, passage *Passage) {
+	for i, p := range *passages {
 		if passage.Slug == p.Slug {
-			passages[i] = passage
+			(*passages)[i] = passage
 			return
 		}
 	}
 
-	passages = append(passages, passage)
+	*passages = append(*passages, passage)
 }
 
-func insertOrReplaceTalk(talks []*t.Talk, talk *t.Talk) {
-	for i, t := range talks {
+func insertOrReplaceTalk(talks *[]*t.Talk, talk *t.Talk) {
+	for i, t := range *talks {
 		if talk.Slug == t.Slug {
-			talks[i] = talk
+			(*talks)[i] = talk
 			return
 		}
 	}
 
-	talks = append(talks, talk)
+	*talks = append(*talks, talk)
 }
 
 // isDraft does really simplistic detection on whether the given source is a
@@ -1808,7 +1808,7 @@ func pathAsImage(extensionlessPath string) (string, bool) {
 	return "", false
 }
 
-func renderArticle(c *modulr.Context, source string, articles []*Article, articlesChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderArticle(c *modulr.Context, source string, articles *[]*Article, articlesChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -1966,7 +1966,7 @@ func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag, articl
 	return true, feed.Encode(f, "  ")
 }
 
-func renderFragment(c *modulr.Context, source string, fragments []*Fragment, fragmentsChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderFragment(c *modulr.Context, source string, fragments *[]*Fragment, fragmentsChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2098,7 +2098,7 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment,
 		c.TargetDir+"/fragments/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderPassage(c *modulr.Context, source string, passages []*Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderPassage(c *modulr.Context, source string, passages *[]*Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2460,7 +2460,7 @@ func renderSequence(c *modulr.Context, sequenceName string, photo *Photo,
 		aceOptions(viewsChanged), locals)
 }
 
-func renderTalk(c *modulr.Context, source string, talks []*t.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderTalk(c *modulr.Context, source string, talks *[]*t.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
