@@ -104,12 +104,6 @@ type Conf struct {
 	// It's used for things like Atom feeds and sending email.
 	AbsoluteURL string `env:"ABSOLUTE_URL,default=https://brandur.org"`
 
-	// AtomAuthorName is the name of the author to include in Atom feeds.
-	AtomAuthorName string `env:"AUTHOR_NAME,default=Brandur Leach"`
-
-	// AtomAuthorName is the URL of the author to include in Atom feeds.
-	AtomAuthorURL string `env:"AUTHOR_URL,default=https://brandur.org"`
-
 	// BlackSwanDatabaseURL is a connection string for a database to connect to
 	// in order to extract books, tweets, runs, etc.
 	BlackSwanDatabaseURL string `env:"BLACK_SWAN_DATABASE_URL"`

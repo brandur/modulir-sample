@@ -45,6 +45,9 @@ import (
 //////////////////////////////////////////////////////////////////////////////
 
 const (
+	// AtomAuthorName is the name of the author to include in Atom feeds.
+	AtomAuthorName = "Brandur Leach"
+
 	// LayoutsDir is the source directory for view layouts.
 	LayoutsDir = "./layouts"
 
@@ -1947,8 +1950,8 @@ func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag, articl
 			Link:      &atom.Link{Href: conf.AbsoluteURL + "/" + article.Slug},
 			ID:        "tag:brandur.org," + article.PublishedAt.Format("2006-01-02") + ":" + article.Slug,
 
-			AuthorName: conf.AtomAuthorName,
-			AuthorURI:  conf.AtomAuthorURL,
+			AuthorName: AtomAuthorName,
+			AuthorURI:  conf.AbsoluteURL,
 		}
 		feed.Entries = append(feed.Entries, entry)
 	}
@@ -2056,8 +2059,8 @@ func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment,
 			Link:      &atom.Link{Href: conf.AbsoluteURL + "/fragments/" + fragment.Slug},
 			ID:        "tag:brandur.org," + fragment.PublishedAt.Format("2006-01-02") + ":fragments/" + fragment.Slug,
 
-			AuthorName: conf.AtomAuthorName,
-			AuthorURI:  conf.AtomAuthorURL,
+			AuthorName: AtomAuthorName,
+			AuthorURI:  conf.AbsoluteURL,
 		}
 		feed.Entries = append(feed.Entries, entry)
 	}
