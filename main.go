@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/brandur/modulr"
-	"github.com/brandur/modulr/log"
+	"github.com/brandur/modulir"
+	"github.com/brandur/modulir/log"
 	"github.com/joeshaw/envdecode"
 	"github.com/spf13/cobra"
 )
@@ -38,7 +38,7 @@ Starts the build loop that watches for local changes and runs
 when they're detected. A webserver is started on PORT (default
 5004).`),
 		Run: func(cmd *cobra.Command, args []string) {
-			modulr.Build(getModulrConfig(), build)
+			modulir.Build(getModulirConfig(), build)
 		},
 	})
 	rootCmd.AddCommand(&cobra.Command{
@@ -48,7 +48,7 @@ when they're detected. A webserver is started on PORT (default
 Runs the build loop one time and places the result in TARGET_DIR
 (default ./public/).`),
 		Run: func(cmd *cobra.Command, args []string) {
-			modulr.BuildLoop(getModulrConfig(), build)
+			modulir.BuildLoop(getModulirConfig(), build)
 		},
 	})
 
@@ -152,15 +152,15 @@ type Conf struct {
 //
 //////////////////////////////////////////////////////////////////////////////
 
-// getModulrConfig interprets Conf to produce a configuration suitable to pass
-// to a Modulr build loop.
-func getModulrConfig() *modulr.Config {
+// getModulirConfig interprets Conf to produce a configuration suitable to pass
+// to a Modulir build loop.
+func getModulirConfig() *modulir.Config {
 	logLevel := log.LevelInfo
 	if conf.Verbose {
 		logLevel = log.LevelDebug
 	}
 
-	return &modulr.Config{
+	return &modulir.Config{
 		Concurrency: conf.Concurrency,
 		Log:         &log.Logger{Level: logLevel},
 		Port:        conf.Port,

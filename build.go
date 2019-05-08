@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brandur/modulr"
-	"github.com/brandur/modulr/mod/mace"
-	"github.com/brandur/modulr/mod/mfile"
-	"github.com/brandur/modulr/mod/mmarkdown"
-	"github.com/brandur/modulr/mod/mtoc"
-	"github.com/brandur/modulr/mod/myaml"
+	"github.com/brandur/modulir"
+	"github.com/brandur/modulir/modules/mace"
+	"github.com/brandur/modulir/modules/mfile"
+	"github.com/brandur/modulir/modules/mmarkdown"
+	"github.com/brandur/modulir/modules/mtoc"
+	"github.com/brandur/modulir/modules/myaml"
 	"github.com/brandur/sorg/assets"
 	"github.com/brandur/sorg/atom"
 	"github.com/brandur/sorg/markdown"
@@ -143,7 +143,7 @@ func init() {
 //
 //////////////////////////////////////////////////////////////////////////////
 
-func build(c *modulr.Context) error {
+func build(c *modulir.Context) error {
 	//
 	// Phase 0: Setup
 	//
@@ -1053,7 +1053,7 @@ func aceOptions(dynamicReload bool) *ace.Options {
 	return options
 }
 
-func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, error) {
+func compileJavascripts(c *modulir.Context, versionedAssetsDir string) (bool, error) {
 	sourceDir := c.SourceDir + "/content/javascripts"
 
 	sources, err := mfile.ReadDir(c, sourceDir)
@@ -1071,7 +1071,7 @@ func compileJavascripts(c *modulr.Context, versionedAssetsDir string) (bool, err
 		versionedAssetsDir+"/app.js")
 }
 
-func compileStylesheets(c *modulr.Context, versionedAssetsDir string) (bool, error) {
+func compileStylesheets(c *modulir.Context, versionedAssetsDir string) (bool, error) {
 	sourceDir := c.SourceDir + "/content/stylesheets"
 
 	sources, err := mfile.ReadDir(c, sourceDir)
@@ -1095,7 +1095,7 @@ func extractSlug(source string) string {
 	return strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
 }
 
-func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, error) {
+func fetchAndResizePhoto(c *modulir.Context, dir string, photo *Photo) (bool, error) {
 	// source without an extension, e.g. `content/photographs/123`
 	sourceNoExt := filepath.Join(dir, photo.Slug)
 
@@ -1149,7 +1149,7 @@ func fetchAndResizePhoto(c *modulr.Context, dir string, photo *Photo) (bool, err
 
 // fetchURL is a helper for fetching a file via HTTP and storing it the local
 // filesystem.
-func fetchURL(c *modulr.Context, source, target string) error {
+func fetchURL(c *modulir.Context, source, target string) error {
 	c.Log.Debugf("Fetching file: %v", source)
 
 	resp, err := http.Get(source)
@@ -1766,7 +1766,7 @@ func pathAsImage(extensionlessPath string) (string, bool) {
 	return "", false
 }
 
-func renderArticle(c *modulr.Context, source string, articles *[]*Article, articlesChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderArticle(c *modulir.Context, source string, articles *[]*Article, articlesChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -1840,7 +1840,7 @@ func renderArticle(c *modulr.Context, source string, articles *[]*Article, artic
 	return true, nil
 }
 
-func renderArticlesIndex(c *modulr.Context, articles []*Article, articlesChanged bool) (bool, error) {
+func renderArticlesIndex(c *modulir.Context, articles []*Article, articlesChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
 			MainLayout,
@@ -1862,7 +1862,7 @@ func renderArticlesIndex(c *modulr.Context, articles []*Article, articlesChanged
 		c.TargetDir+"/articles/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag, articlesChanged bool) (bool, error) {
+func renderArticlesFeed(c *modulir.Context, articles []*Article, tag *Tag, articlesChanged bool) (bool, error) {
 	if !articlesChanged && !c.Forced() {
 		return false, nil
 	}
@@ -1924,7 +1924,7 @@ func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag, articl
 	return true, feed.Encode(f, "  ")
 }
 
-func renderFragment(c *modulr.Context, source string, fragments *[]*Fragment, fragmentsChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderFragment(c *modulir.Context, source string, fragments *[]*Fragment, fragmentsChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -1985,7 +1985,7 @@ func renderFragment(c *modulr.Context, source string, fragments *[]*Fragment, fr
 	return true, nil
 }
 
-func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment,
+func renderFragmentsFeed(c *modulir.Context, fragments []*Fragment,
 	fragmentsChanged bool) (bool, error) {
 	if !fragmentsChanged && !c.Forced() {
 		return false, nil
@@ -2033,7 +2033,7 @@ func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment,
 	return true, feed.Encode(f, "  ")
 }
 
-func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment,
+func renderFragmentsIndex(c *modulir.Context, fragments []*Fragment,
 	fragmentsChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2056,7 +2056,7 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment,
 		c.TargetDir+"/fragments/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderPassage(c *modulr.Context, source string, passages *[]*spassages.Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderPassage(c *modulir.Context, source string, passages *[]*spassages.Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2069,7 +2069,7 @@ func renderPassage(c *modulr.Context, source string, passages *[]*spassages.Pass
 		return false, nil
 	}
 
-	// TODO: modulr-ize this package
+	// TODO: modulir-ize this package
 	passage, err := spassages.Render(filepath.Dir(source), filepath.Base(source), false)
 	if err != nil {
 		return true, err
@@ -2094,7 +2094,7 @@ func renderPassage(c *modulr.Context, source string, passages *[]*spassages.Pass
 	return true, nil
 }
 
-func renderPassagesIndex(c *modulr.Context, passages []*spassages.Passage,
+func renderPassagesIndex(c *modulir.Context, passages []*spassages.Passage,
 	passagesChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2115,7 +2115,7 @@ func renderPassagesIndex(c *modulr.Context, passages []*spassages.Passage,
 		c.TargetDir+"/passages/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderHome(c *modulr.Context,
+func renderHome(c *modulir.Context,
 	articles []*Article, fragments []*Fragment, photos []*Photo,
 	articlesChanged, fragmentsChanged, photosChanged bool) (bool, error) {
 
@@ -2153,7 +2153,7 @@ func renderHome(c *modulr.Context,
 		c.TargetDir+"/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderPage(c *modulr.Context, source string, meta map[string]*Page, metaChanged bool) (bool, error) {
+func renderPage(c *modulir.Context, source string, meta map[string]*Page, metaChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
 			MainLayout,
@@ -2210,7 +2210,7 @@ func renderPage(c *modulr.Context, source string, meta map[string]*Page, metaCha
 	return true, nil
 }
 
-func renderReading(c *modulr.Context, db *sql.DB) (bool, error) {
+func renderReading(c *modulir.Context, db *sql.DB) (bool, error) {
 	if db == nil {
 		return false, nil
 	}
@@ -2261,7 +2261,7 @@ func renderReading(c *modulr.Context, db *sql.DB) (bool, error) {
 		c.TargetDir+"/reading/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderPhotoIndex(c *modulr.Context, photos []*Photo,
+func renderPhotoIndex(c *modulir.Context, photos []*Photo,
 	photosChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2284,7 +2284,7 @@ func renderPhotoIndex(c *modulr.Context, photos []*Photo,
 		c.TargetDir+"/photos/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderRobotsTxt(c *modulr.Context) (bool, error) {
+func renderRobotsTxt(c *modulir.Context) (bool, error) {
 	if !c.FirstRun && !c.Forced() {
 		return false, nil
 	}
@@ -2317,7 +2317,7 @@ Disallow: /photos
 	return true, nil
 }
 
-func renderRuns(c *modulr.Context, db *sql.DB) (bool, error) {
+func renderRuns(c *modulir.Context, db *sql.DB) (bool, error) {
 	if db == nil {
 		return false, nil
 	}
@@ -2364,7 +2364,7 @@ func renderRuns(c *modulr.Context, db *sql.DB) (bool, error) {
 		c.TargetDir+"/runs/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderSequence(c *modulr.Context, sequenceName string, photo *Photo,
+func renderSequence(c *modulir.Context, sequenceName string, photo *Photo,
 	sequenceChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2393,7 +2393,7 @@ func renderSequence(c *modulr.Context, sequenceName string, photo *Photo,
 		aceOptions(viewsChanged), locals)
 }
 
-func renderTalk(c *modulr.Context, source string, talks *[]*stalks.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderTalk(c *modulir.Context, source string, talks *[]*stalks.Talk, talksChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2406,7 +2406,7 @@ func renderTalk(c *modulr.Context, source string, talks *[]*stalks.Talk, talksCh
 		return false, nil
 	}
 
-	// TODO: modulr-ize this package
+	// TODO: modulir-ize this package
 	talk, err := stalks.Render(
 		c.SourceDir+"/content", filepath.Dir(source), filepath.Base(source))
 	if err != nil {
@@ -2433,7 +2433,7 @@ func renderTalk(c *modulr.Context, source string, talks *[]*stalks.Talk, talksCh
 	return true, nil
 }
 
-func renderTwitter(c *modulr.Context, db *sql.DB) (bool, error) {
+func renderTwitter(c *modulir.Context, db *sql.DB) (bool, error) {
 	if db == nil {
 		return false, nil
 	}
@@ -2499,7 +2499,7 @@ func renderTwitter(c *modulr.Context, db *sql.DB) (bool, error) {
 	return true, nil
 }
 
-func resizeImage(c *modulr.Context, source, target string, width int) error {
+func resizeImage(c *modulir.Context, source, target string, width int) error {
 	cmd := exec.Command(
 		"gm",
 		"convert",
