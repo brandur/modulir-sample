@@ -45,10 +45,6 @@ import (
 //////////////////////////////////////////////////////////////////////////////
 
 const (
-	// AbsoluteURL is the site's absolute URL. It's usually preferable that
-	// it's not used, but it is when generating emails.
-	AbsoluteURL = "https://brandur.org"
-
 	// LayoutsDir is the source directory for view layouts.
 	LayoutsDir = "./layouts"
 
@@ -1857,7 +1853,7 @@ func renderArticle(c *modulr.Context, source string, articles *[]*Article, artic
 		path.Join(c.SourceDir, "content", "images", article.Slug, "twitter@2x"),
 	)
 	if ok {
-		card.ImageURL = AbsoluteURL + "/assets/images/" + article.Slug + "/twitter@2x." + format
+		card.ImageURL = conf.AbsoluteURL + "/assets/images/" + article.Slug + "/twitter@2x." + format
 	}
 
 	locals := getLocals(article.Title, map[string]interface{}{
@@ -1948,7 +1944,7 @@ func renderArticlesFeed(c *modulr.Context, articles []*Article, tag *Tag, articl
 			Content:   &atom.EntryContent{Content: article.Content, Type: "html"},
 			Published: *article.PublishedAt,
 			Updated:   *article.PublishedAt,
-			Link:      &atom.Link{Href: conf.SiteURL + "/" + article.Slug},
+			Link:      &atom.Link{Href: conf.AbsoluteURL + "/" + article.Slug},
 			ID:        "tag:brandur.org," + article.PublishedAt.Format("2006-01-02") + ":" + article.Slug,
 
 			AuthorName: conf.AtomAuthorName,
@@ -2003,7 +1999,7 @@ func renderFragment(c *modulr.Context, source string, fragments *[]*Fragment, fr
 		path.Join(c.SourceDir, "content", "images", "fragments", fragment.Slug, "twitter@2x"),
 	)
 	if ok {
-		card.ImageURL = AbsoluteURL + "/assets/images/fragments/" + fragment.Slug + "/twitter@2x." + format
+		card.ImageURL = conf.AbsoluteURL + "/assets/images/fragments/" + fragment.Slug + "/twitter@2x." + format
 	}
 
 	locals := getLocals(fragment.Title, map[string]interface{}{
@@ -2057,7 +2053,7 @@ func renderFragmentsFeed(c *modulr.Context, fragments []*Fragment,
 			Content:   &atom.EntryContent{Content: fragment.Content, Type: "html"},
 			Published: *fragment.PublishedAt,
 			Updated:   *fragment.PublishedAt,
-			Link:      &atom.Link{Href: conf.SiteURL + "/fragments/" + fragment.Slug},
+			Link:      &atom.Link{Href: conf.AbsoluteURL + "/fragments/" + fragment.Slug},
 			ID:        "tag:brandur.org," + fragment.PublishedAt.Format("2006-01-02") + ":fragments/" + fragment.Slug,
 
 			AuthorName: conf.AtomAuthorName,

@@ -100,6 +100,10 @@ var conf Conf
 // Conf contains configuration information for the command. It's extracted from
 // environment variables.
 type Conf struct {
+	// AbsoluteURL is the absolute URL where the compiled site will be hosted.
+	// It's used for things like Atom feeds and sending email.
+	AbsoluteURL string `env:"ABSOLUTE_URL,default=https://brandur.org"`
+
 	// AtomAuthorName is the name of the author to include in Atom feeds.
 	AtomAuthorName string `env:"AUTHOR_NAME,default=Brandur Leach"`
 
@@ -136,9 +140,6 @@ type Conf struct {
 
 	// Port is the port on which to serve HTTP when looping in development.
 	Port int `env:"PORT,default=5004"`
-
-	// SiteURL is the absolute URL where the compiled site will be hosted.
-	SiteURL string `env:"SITE_URL,default=https://brandur.org"`
 
 	// TargetDir is the target location where the site will be built to.
 	TargetDir string `env:"TARGET_DIR,default=./public"`
