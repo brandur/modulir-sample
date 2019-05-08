@@ -1846,7 +1846,7 @@ func renderArticle(c *modulr.Context, source string, articles *[]*Article, artic
 		path.Join(c.SourceDir, "content", "images", article.Slug, "hook"),
 	)
 	if ok {
-		article.HookImageURL = "/assets/" + article.Slug + "/hook." + format
+		article.HookImageURL = "/assets/images/" + article.Slug + "/hook." + format
 	}
 
 	card := &twitterCard{
@@ -1857,7 +1857,7 @@ func renderArticle(c *modulr.Context, source string, articles *[]*Article, artic
 		path.Join(c.SourceDir, "content", "images", article.Slug, "twitter@2x"),
 	)
 	if ok {
-		card.ImageURL = AbsoluteURL + "/assets/" + article.Slug + "/twitter@2x." + format
+		card.ImageURL = AbsoluteURL + "/assets/images/" + article.Slug + "/twitter@2x." + format
 	}
 
 	locals := getLocals(article.Title, map[string]interface{}{
@@ -2003,7 +2003,7 @@ func renderFragment(c *modulr.Context, source string, fragments *[]*Fragment, fr
 		path.Join(c.SourceDir, "content", "images", "fragments", fragment.Slug, "twitter@2x"),
 	)
 	if ok {
-		card.ImageURL = AbsoluteURL + "/assets/fragments/" + fragment.Slug + "/twitter@2x." + format
+		card.ImageURL = AbsoluteURL + "/assets/images/fragments/" + fragment.Slug + "/twitter@2x." + format
 	}
 
 	locals := getLocals(fragment.Title, map[string]interface{}{
