@@ -26,6 +26,7 @@ import (
 	"github.com/brandur/sorg/assets"
 	"github.com/brandur/sorg/atom"
 	"github.com/brandur/sorg/markdown"
+	p "github.com/brandur/sorg/passages"
 	t "github.com/brandur/sorg/talks"
 	"github.com/brandur/sorg/templatehelpers"
 	_ "github.com/lib/pq"
@@ -98,7 +99,7 @@ const twitterInfo = `<p>Find me on Twitter at ` +
 var (
 	articles  []*Article
 	fragments []*Fragment
-	passages  []*Passage
+	passages  []*p.Passage
 	pages     map[string]*Page
 	photos    []*Photo
 	sequences map[string][]*Photo
@@ -887,48 +888,6 @@ type Page struct {
 	// Title is the HTML title that will be assigned to the page when it's
 	// rendered.
 	Title string `yaml:"title"`
-}
-
-// Passage represents a single burst of the Passage & Glass newsletter to be
-// rendered.
-type Passage struct {
-	// Content is the HTML content of the passage. It isn't included as YAML
-	// frontmatter, and is rather split out of an passage's Markdown file,
-	// rendered, and then added separately.
-	Content string `yaml:"-"`
-
-	// ContentRaw is the raw Markdown content of the passage.
-	ContentRaw string `yaml:"-"`
-
-	// Draft indicates that the passage is not yet published.
-	Draft bool `yaml:"-"`
-
-	// Issue is the issue number of the passage like "001". Notably, it's a
-	// number, but zero-padded.
-	Issue string `yaml:"-"`
-
-	// PublishedAt is when the passage was published.
-	PublishedAt *time.Time `yaml:"published_at"`
-
-	// Slug is a unique identifier for the passage that also helps determine
-	// where it's addressable by URL. It's a combination of an issue number
-	// (like `001` and a short identifier).
-	Slug string `yaml:"-"`
-
-	// Title is the passage's title.
-	Title string `yaml:"title"`
-}
-
-func (p *Passage) validate(source string) error {
-	if p.Title == "" {
-		return fmt.Errorf("No title for passage: %v", source)
-	}
-
-	if p.PublishedAt == nil {
-		return fmt.Errorf("No publish date for passage: %v", source)
-	}
-
-	return nil
 }
 
 // Photo is a photograph.
@@ -1759,7 +1718,7 @@ func insertOrReplaceFragment(fragments *[]*Fragment, fragment *Fragment) {
 	*fragments = append(*fragments, fragment)
 }
 
-func insertOrReplacePassage(passages *[]*Passage, passage *Passage) {
+func insertOrReplacePassage(passages *[]*p.Passage, passage *p.Passage) {
 	for i, p := range *passages {
 		if passage.Slug == p.Slug {
 			(*passages)[i] = passage
@@ -2097,7 +2056,7 @@ func renderFragmentsIndex(c *modulr.Context, fragments []*Fragment,
 		c.TargetDir+"/fragments/index.html", aceOptions(viewsChanged), locals)
 }
 
-func renderPassage(c *modulr.Context, source string, passages *[]*Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
+func renderPassage(c *modulr.Context, source string, passages *[]*p.Passage, passagesChanged *bool, mu *sync.Mutex) (bool, error) {
 	sourceChanged := c.Changed(source)
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2110,36 +2069,11 @@ func renderPassage(c *modulr.Context, source string, passages *[]*Passage, passa
 		return false, nil
 	}
 
-	var passage Passage
-	data, err := myaml.ParseFileFrontmatter(c, source, &passage)
+	// TODO: modulr-ize this package
+	passage, err := p.Render(filepath.Dir(source), filepath.Base(source), false)
 	if err != nil {
 		return true, err
 	}
-
-	err = passage.validate(source)
-	if err != nil {
-		return true, err
-	}
-
-	passage.ContentRaw = string(data)
-	passage.Draft = isDraft(source)
-	passage.Slug = extractSlug(source)
-
-	slugParts := strings.Split(passage.Slug, "-")
-	if len(slugParts) < 2 {
-		return true, fmt.Errorf("Expected passage slug to contain issue number: %v",
-			passage.Slug)
-	}
-	passage.Issue = slugParts[0]
-
-	email := false
-
-	passage.Content = renderComplexMarkdown(passage.ContentRaw, &markdown.RenderOptions{
-		AbsoluteURLs:    email,
-		NoFootnoteLinks: email,
-		NoHeaderLinks:   email,
-		NoRetina:        true,
-	})
 
 	locals := getLocals(passage.Title, map[string]interface{}{
 		"InEmail": false,
@@ -2153,14 +2087,14 @@ func renderPassage(c *modulr.Context, source string, passages *[]*Passage, passa
 	}
 
 	mu.Lock()
-	insertOrReplacePassage(passages, &passage)
+	insertOrReplacePassage(passages, passage)
 	*passagesChanged = true
 	mu.Unlock()
 
 	return true, nil
 }
 
-func renderPassagesIndex(c *modulr.Context, passages []*Passage,
+func renderPassagesIndex(c *modulr.Context, passages []*p.Passage,
 	passagesChanged bool) (bool, error) {
 	viewsChanged := c.ChangedAny(append(
 		[]string{
@@ -2629,7 +2563,7 @@ func sortFragments(fragments []*Fragment) {
 	})
 }
 
-func sortPassages(passages []*Passage) {
+func sortPassages(passages []*p.Passage) {
 	sort.Slice(passages, func(i, j int) bool {
 		return passages[j].PublishedAt.Before(*passages[i].PublishedAt)
 	})
