@@ -107,9 +107,10 @@ var (
 )
 
 // List of partial views. If any of these changes we rebuild pretty much
-// anything. Even though some of those changes will false positives, they're
-// used pervasively enough and change infrequently enough that it's worth the
-// tradeoff. This is a global because so many render functions access it.
+// everything. Even though some of those changes will false positives, the
+// partials are used pervasively enough, and change infrequently enough, that
+// it's worth the tradeoff. This variable is a global because so many render
+// functions access it.
 var partialViews []string
 
 var renderComplexMarkdown func(string, *smarkdown.RenderOptions) string
