@@ -23,12 +23,12 @@ import (
 	"github.com/brandur/modulir/modules/mmarkdown"
 	"github.com/brandur/modulir/modules/mtoc"
 	"github.com/brandur/modulir/modules/myaml"
-	"github.com/brandur/sorg/assets"
-	"github.com/brandur/sorg/atom"
-	"github.com/brandur/sorg/markdown"
-	spassages "github.com/brandur/sorg/passages"
-	stalks "github.com/brandur/sorg/talks"
-	"github.com/brandur/sorg/templatehelpers"
+	"github.com/brandur/sorg/modules/sassets"
+	"github.com/brandur/sorg/modules/satom"
+	"github.com/brandur/sorg/modules/smarkdown"
+	"github.com/brandur/sorg/modules/spassages"
+	"github.com/brandur/sorg/modules/stalks"
+	"github.com/brandur/sorg/modules/stemplate"
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/yosssi/ace"
@@ -112,7 +112,7 @@ var (
 // tradeoff. This is a global because so many render functions access it.
 var partialViews []string
 
-var renderComplexMarkdown func(string, *markdown.RenderOptions) string
+var renderComplexMarkdown func(string, *smarkdown.RenderOptions) string
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -126,7 +126,7 @@ var renderComplexMarkdown func(string, *markdown.RenderOptions) string
 
 // init runs on package initialization.
 func init() {
-	renderComplexMarkdown = markdown.ComposeRenderStack(func(source []byte) []byte {
+	renderComplexMarkdown = smarkdown.ComposeRenderStack(func(source []byte) []byte {
 		return blackfriday.Run(source)
 	})
 
@@ -1044,7 +1044,7 @@ type twitterCard struct {
 //////////////////////////////////////////////////////////////////////////////
 
 func aceOptions(dynamicReload bool) *ace.Options {
-	options := &ace.Options{FuncMap: templatehelpers.FuncMap}
+	options := &ace.Options{FuncMap: stemplate.FuncMap}
 
 	if dynamicReload {
 		options.DynamicReload = true
@@ -1066,7 +1066,7 @@ func compileJavascripts(c *modulir.Context, versionedAssetsDir string) (bool, er
 		return false, nil
 	}
 
-	return true, assets.CompileJavascripts(
+	return true, sassets.CompileJavascripts(
 		sourceDir,
 		versionedAssetsDir+"/app.js")
 }
@@ -1084,7 +1084,7 @@ func compileStylesheets(c *modulir.Context, versionedAssetsDir string) (bool, er
 		return false, nil
 	}
 
-	return true, assets.CompileStylesheets(
+	return true, sassets.CompileStylesheets(
 		sourceDir,
 		versionedAssetsDir+"/app.css")
 }
@@ -1878,11 +1878,11 @@ func renderArticlesFeed(c *modulir.Context, articles []*Article, tag *Tag, artic
 		title = fmt.Sprintf("Articles (%s) - brandur.org", *tag)
 	}
 
-	feed := &atom.Feed{
+	feed := &satom.Feed{
 		Title: title,
 		ID:    "tag:brandur.org.org,2013:/" + name,
 
-		Links: []*atom.Link{
+		Links: []*satom.Link{
 			{Rel: "self", Type: "application/atom+xml", Href: "https://brandur.org/" + filename},
 			{Rel: "alternate", Type: "text/html", Href: "https://brandur.org"},
 		},
@@ -1901,12 +1901,12 @@ func renderArticlesFeed(c *modulir.Context, articles []*Article, tag *Tag, artic
 			break
 		}
 
-		entry := &atom.Entry{
+		entry := &satom.Entry{
 			Title:     article.Title,
-			Content:   &atom.EntryContent{Content: article.Content, Type: "html"},
+			Content:   &satom.EntryContent{Content: article.Content, Type: "html"},
 			Published: *article.PublishedAt,
 			Updated:   *article.PublishedAt,
-			Link:      &atom.Link{Href: conf.AbsoluteURL + "/" + article.Slug},
+			Link:      &satom.Link{Href: conf.AbsoluteURL + "/" + article.Slug},
 			ID:        "tag:brandur.org," + article.PublishedAt.Format("2006-01-02") + ":" + article.Slug,
 
 			AuthorName: AtomAuthorName,
@@ -1991,11 +1991,11 @@ func renderFragmentsFeed(c *modulir.Context, fragments []*Fragment,
 		return false, nil
 	}
 
-	feed := &atom.Feed{
+	feed := &satom.Feed{
 		Title: "Fragments - brandur.org",
 		ID:    "tag:brandur.org.org,2013:/fragments",
 
-		Links: []*atom.Link{
+		Links: []*satom.Link{
 			{Rel: "self", Type: "application/atom+xml", Href: "https://brandur.org/fragments.atom"},
 			{Rel: "alternate", Type: "text/html", Href: "https://brandur.org"},
 		},
@@ -2010,12 +2010,12 @@ func renderFragmentsFeed(c *modulir.Context, fragments []*Fragment,
 			break
 		}
 
-		entry := &atom.Entry{
+		entry := &satom.Entry{
 			Title:     fragment.Title,
-			Content:   &atom.EntryContent{Content: fragment.Content, Type: "html"},
+			Content:   &satom.EntryContent{Content: fragment.Content, Type: "html"},
 			Published: *fragment.PublishedAt,
 			Updated:   *fragment.PublishedAt,
-			Link:      &atom.Link{Href: conf.AbsoluteURL + "/fragments/" + fragment.Slug},
+			Link:      &satom.Link{Href: conf.AbsoluteURL + "/fragments/" + fragment.Slug},
 			ID:        "tag:brandur.org," + fragment.PublishedAt.Format("2006-01-02") + ":fragments/" + fragment.Slug,
 
 			AuthorName: AtomAuthorName,
