@@ -15,7 +15,7 @@ import (
 //
 //////////////////////////////////////////////////////////////////////////////
 
-func build(c *modulir.Context) error {
+func build(c *modulir.Context) []error {
 	//
 	// Phase 0: Setup
 	//
@@ -36,7 +36,7 @@ func build(c *modulir.Context) error {
 		for _, dir := range commonDirs {
 			err := mfile.EnsureDir(c, dir)
 			if err != nil {
-				return nil
+				return []error{err}
 			}
 		}
 	}
