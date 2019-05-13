@@ -69,10 +69,11 @@ Runs the build loop one time and places the result in ./public.`),
 // to a Modulir build loop.
 func getModulirConfig() *modulir.Config {
 	return &modulir.Config{
-		Concurrency: 30,
-		Log:         &modulir.Logger{Level: modulir.LevelDebug},
-		Port:        5004,
-		SourceDir:   ".",
-		TargetDir:   "./public",
+		Concurrency:    30,
+		Log:            &modulir.Logger{Level: modulir.LevelInfo},
+		Port:           5004,
+		SourceDir:      ".",
+		StartWebsocket: true,
+		TargetDir:      "./public",
 	}
 }
