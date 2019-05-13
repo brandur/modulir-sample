@@ -47,7 +47,7 @@ func build(c *modulir.Context) []error {
 			target := c.TargetDir + "/hello/index.html"
 
 			sourceChanged := c.Changed(source)
-			if !sourceChanged && !c.Forced() {
+			if !sourceChanged {
 				return false, nil
 			}
 
