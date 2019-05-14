@@ -73,7 +73,7 @@ func getModulirConfig() *modulir.Config {
 		Log:            &modulir.Logger{Level: modulir.LevelInfo},
 		Port:           5004,
 		SourceDir:      ".",
-		StartWebsocket: true,
 		TargetDir:      "./public",
+		Websocket:      true,
 	}
 }
